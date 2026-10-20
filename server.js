@@ -557,6 +557,8 @@ module.exports = {
   cacheGet,
   cacheSet,
   acquireSingleInstanceLock,
+  clamiGet,
+  requestHandler,
   releaseSingleInstanceLock,
   MAX_CACHE_ENTRIES
 };

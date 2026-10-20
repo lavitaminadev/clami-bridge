@@ -403,6 +403,26 @@ La tabla completa de códigos y respuestas está en
 node --test
 ```
 
+No sale ninguna petición de la máquina y no se consume cuota: `fetch` se sustituye por un
+doble dentro del proceso de prueba. El destino de `clamiGet` sigue clavado en el código y
+no hay variable que lo mueva.
+
+| Archivo | Qué fija |
+|---|---|
+| `test/http.test.js` | Autenticación, orden de las comprobaciones, cabeceras, códigos, bloqueo administrativo, que ningún secreto salga en una respuesta |
+| `test/clami.test.js` | La credencial viaja en `Authorization`, cada error del catálogo da su código, el `Retry-After` se respeta, ningún mensaje menciona la credencial |
+| `test/clami-bloqueo.test.js` | Un `Retry-After` desmedido se acota a una hora |
+| `test/candado.test.js` | Toma, libera y recuperación de un candado huérfano |
+| `test/registros.test.js` | La lista blanca de los registros |
+| `test/cache.test.js` | Vencimiento y desalojo |
+| `test/bordes.test.js` | Límite de 8 KB, rangos de precio y stock, `ref`, comparación del secreto |
+| `test/server.test.js` | Validación, formato y clasificación de errores |
+
+**Lo que estas pruebas no pueden decir** es si CLAMI cambió su contrato: el doble responde
+lo que el proyecto cree que CLAMI responde. Para eso está la prueba real contra el
+servidor desplegado, y por eso `src/clami-response.js` rechaza toda respuesta que no
+encaje con la especificación en vez de confiar en ella.
+
 **No probar la credencial de CLAMI desde un PC** una vez que quede registrada para la IP
 del servidor: la consulta vendría de otro origen y CLAMI la rechazaría.
 
