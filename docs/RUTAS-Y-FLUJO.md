@@ -49,3 +49,26 @@ X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
 ```
 
 El servidor vuelve a CLAMI para precio y stock actualizados.
+
+## Lo que impone ManyChat
+
+Verificado en la documentación oficial de Dev Tools:
+
+| Regla | Cómo responde el puente |
+|---|---|
+| Solo acepta enlaces HTTPS | El subdominio exige HTTPS |
+| Métodos POST, GET, PUT, DELETE | Ambas rutas usan `POST` |
+| La URL admite hasta 2.000 caracteres | Las rutas son fijas y breves |
+| El corte es de 10 s y no se puede cambiar | CLAMI tiene 7 s; el resto queda de margen |
+| Solo se puede mapear JSON | Toda respuesta es JSON |
+| No se puede mapear el cuerpo si el código no es `200` | Las condiciones de operación devuelven `200` con `ok: false` |
+| Un campo de usuario guarda 4.000 caracteres | `texto` se mantiene en una línea por producto, con tope de 10 opciones |
+
+**Al probar desde el panel no se mapean los valores.** La documentación lo dice: el mapeo
+«is only successful when you trigger the DevTool as a contact or preview the automation».
+Una prueba que devuelve `200` y deja los campos vacíos es el comportamiento esperado, no
+una falla del puente: hay que probar como contacto o con la vista previa.
+
+Si el puente responde con un código distinto de `200`, ManyChat entrega el contenido de
+*fallback* de la automatización. Conviene configurar uno con un mensaje neutro: es lo que
+verá el cliente cuando el secreto o la External Request estén mal configurados.

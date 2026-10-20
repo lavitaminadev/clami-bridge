@@ -2,14 +2,44 @@
 
 ## Respuestas esperadas
 
+ManyChat solo lee el cuerpo de una respuesta `200`: «It's not possible to map an error
+message if the returned code is not 200 OK» (Dev Tools: Basics). Con cualquier otro
+código descarta el cuerpo y entrega el contenido de *fallback* configurado en la
+automatización.
+
+Por eso las rutas `/manychat/*` separan dos situaciones:
+
+- **Operación** — el catálogo no respondió, se agotó un cupo o el producto no existe.
+  Devuelven `200` con `ok: false`, el aviso en `texto` y el código interno en `codigo`.
+  El cliente lee el aviso redactado aquí.
+- **Configuración** — secreto equivocado, método o `Content-Type` incorrecto, ruta
+  inexistente. Conservan su código real: el *fallback* es la respuesta correcta para el
+  cliente y el código es lo que permite encontrar la falla.
+
+`/health` y `/dev/*` no pasan por ManyChat y conservan siempre su código real.
+
 | Caso | Respuesta del puente | Acción |
 |---|---|---|
-| CLAMI `429` | `503` genérico al bot y cabecera `Retry-After` | Esperar esos segundos; el puente bloquea llamadas temporalmente |
-| CLAMI `401` / `403` | `503` genérico | Revisar credencial e IP de salida con iHosting/CLAMI |
-| Timeout / red | `504` o `502` genérico | Revisar logs y disponibilidad CLAMI |
+| CLAMI `429` | `200` · `CLAMI_RATE_LIMITED` | El puente bloquea llamadas durante el `Retry-After` recibido |
+| CLAMI `401` / `403` | `200` · `CLAMI_CREDENTIAL_OR_ORIGIN` | Revisar credencial e IP de salida con iHosting/CLAMI |
+| Timeout / red | `200` · `CLAMI_TIMEOUT` / `CLAMI_NETWORK_ERROR` | Revisar logs y disponibilidad CLAMI |
+| Respuesta CLAMI incompleta | `200` · `CLAMI_RESPONSE_INVALID` | El contrato del catálogo cambió; revisar antes de reintentar |
+| Cupo local agotado | `200` · `CLAMI_MINUTE_BUDGET` / `CLAMI_DAILY_BUDGET` | Esperar; revisar `/dev/status` |
+| Sin producto | `200` · texto sin resultados o `CLAMI_PRODUCT_NOT_FOUND` | Pedir otra búsqueda |
 | Secreto ManyChat incorrecto | `401` | Revisar cabecera `X-ManyChat-Secret` |
-| JSON/campos inválidos | `400`/`415` | Corregir External Request |
-| Sin producto | Texto sin resultados o `404` | Pedir otra búsqueda |
+| JSON / campos inválidos | `400` / `415` | Corregir la External Request |
+| Servicio sin configurar | `503` | Faltan variables de entorno; revisar y reiniciar |
+
+Un `200` con `ok: false` **no significa que todo salió bien**: el estado real está en
+`codigo` y en los logs, donde el evento sigue siendo `request_error`.
+
+## Presupuesto de tiempo
+
+ManyChat corta la External Request a los 10 segundos y el valor no es configurable
+(«Timeout is limited to 10 seconds. It cannot be changed»). El puente reparte ese techo:
+7 segundos para que CLAMI responda y ~3 para TLS, Passenger y el armado de la respuesta.
+No subir `CLAMI_TIMEOUT_MS` a 10: una consulta lenta terminaría después del corte y el
+cliente vería el *fallback* en vez del aviso propio.
 
 ## Logs
 

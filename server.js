@@ -16,7 +16,13 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data
 const STATE_FILE = path.join(DATA_DIR, 'runtime-state.json');
 const INSTANCE_LOCK_FILE = path.join(DATA_DIR, 'single-instance.lock');
 const LOG_RETENTION_DAYS = 10;
-const CLAMI_TIMEOUT_MS = 10_000;
+// ManyChat corta toda External Request a los 10 s y el valor no es configurable
+// («Timeout is limited to 10 seconds. It cannot be changed», Dev Tools: Basics).
+// Ese techo se reparte: CLAMI responde dentro de estos 7 s y quedan ~3 s para TLS,
+// Passenger y el armado de la respuesta. Con 10 s para CLAMI, una consulta lenta
+// terminaba después del corte y el cliente veía el fallback en vez del aviso propio.
+const MANYCHAT_REQUEST_TIMEOUT_MS = 10_000;
+const CLAMI_TIMEOUT_MS = 7_000;
 const MAX_UPSTREAM_PER_MINUTE = 55;
 const MAX_UPSTREAM_PER_DAY = 2_700;
 const SEARCH_CACHE_TTL_MS = 45_000;
@@ -381,6 +387,37 @@ async function handleProduct(body) {
   return { payload: { ok: true, texto: productText(product), ref: product.ref }, cacheHit };
 }
 
+// Condiciones de operación: el catálogo no respondió, se agotó un cupo o el producto
+// no existe. El cliente tiene que enterarse por el bot.
+const OPERATIONAL_CODES = new Set([
+  ERROR_CODES.CLAMI_COOLDOWN,
+  ERROR_CODES.CLAMI_DAILY_BUDGET,
+  ERROR_CODES.CLAMI_MINUTE_BUDGET,
+  ERROR_CODES.CLAMI_RATE_LIMITED,
+  ERROR_CODES.CLAMI_CREDENTIAL_OR_ORIGIN,
+  ERROR_CODES.CLAMI_PRODUCT_NOT_FOUND,
+  ERROR_CODES.CLAMI_UPSTREAM_ERROR,
+  ERROR_CODES.CLAMI_RESPONSE_INVALID,
+  ERROR_CODES.CLAMI_TIMEOUT,
+  ERROR_CODES.CLAMI_NETWORK_ERROR,
+  ERROR_CODES.LOCAL_RATE_LIMIT
+]);
+
+// ManyChat solo sabe leer el cuerpo de una respuesta 200: «It's not possible to map an
+// error message if the returned code is not 200 OK» (Dev Tools: Basics). Con cualquier
+// otro código descarta el cuerpo y entrega su contenido de fallback, así que el aviso
+// redactado aquí nunca llegaba al cliente.
+//
+// Las rutas de ManyChat devuelven 200 cuando la causa es de operación y el texto está
+// pensado para el cliente. Un error de configuración —secreto equivocado, método o
+// Content-Type incorrecto, ruta inexistente— conserva su código real: ahí el fallback
+// es la respuesta correcta y el código es lo que permite encontrar la falla.
+// `/health` y `/dev/*` no pasan por ManyChat y mantienen siempre su código.
+function responseStatusFor(route, error) {
+  const isManyChatRoute = route === '/manychat/buscar' || route === '/manychat/producto';
+  return isManyChatRoute && OPERATIONAL_CODES.has(error.errorCode) ? 200 : error.status;
+}
+
 async function requestHandler(request, response) {
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
@@ -427,11 +464,12 @@ async function requestHandler(request, response) {
     const known = error instanceof HttpError
       ? error
       : new HttpError(500, 'Error interno.', { reason: 'unexpected' }, ERROR_CODES.INTERNAL_UNEXPECTED);
-    const retryAfter = Number.isInteger(known.details.retryAfter) && known.details.retryAfter > 0
+    const status = responseStatusFor(route, known);
+    const retryAfter = status !== 200 && Number.isInteger(known.details.retryAfter) && known.details.retryAfter > 0
       ? { 'retry-after': String(known.details.retryAfter) }
       : {};
-    respond(response, known.status, { ok: false, texto: known.message, requestId }, retryAfter);
-    await audit('request_error', { ...baseLog, status: known.status, durationMs: Date.now() - startedAt, errorCode: known.errorCode, reason: known.details.reason || 'handled', clamiStatus: known.details.clamiStatus });
+    respond(response, status, { ok: false, texto: known.message, codigo: known.errorCode, requestId }, retryAfter);
+    await audit('request_error', { ...baseLog, status, durationMs: Date.now() - startedAt, errorCode: known.errorCode, reason: known.details.reason || 'handled', clamiStatus: known.details.clamiStatus });
   }
 }
 
@@ -449,7 +487,9 @@ async function start() {
     void purgeOldLogs().then(() => audit('log_retention_completed', { retentionDays: LOG_RETENTION_DAYS }));
   }, 24 * 60 * 60 * 1000);
   logCleanupTimer.unref();
-  const server = http.createServer({ requestTimeout: 15_000, headersTimeout: 10_000 }, requestHandler);
+  // Por debajo del corte de ManyChat: una petición que siguiera abierta más allá de
+  // esos 10 s ya no tiene a quién responder.
+  const server = http.createServer({ requestTimeout: MANYCHAT_REQUEST_TIMEOUT_MS - 1_000, headersTimeout: 5_000 }, requestHandler);
   server.keepAliveTimeout = 5_000;
   server.on('clientError', () => undefined);
   try {
@@ -475,4 +515,4 @@ if (require.main === module) start().catch(async (error) => {
   process.exit(1);
 });
 
-module.exports = { start, validateSearchBody, validateProductBody, productText, constantTimeMatch };
+module.exports = { start, validateSearchBody, validateProductBody, productText, constantTimeMatch, responseStatusFor };
