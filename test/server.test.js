@@ -10,12 +10,6 @@ test('valida búsqueda y detecta código de barras', () => {
   assert.throws(() => validateSearchBody({ q: 'aa' }));
 });
 
-test('acepta refs seguros de cualquier largo emitido por CLAMI', () => {
-  assert.equal(validateProductBody({ ref: 'Qm9uZGlhc0NsYW1pMjAyNg' }), 'Qm9uZGlhc0NsYW1pMjAyNg');
-  assert.equal(validateProductBody({ ref: 'ref_corta-1' }), 'ref_corta-1');
-  assert.throws(() => validateProductBody({ ref: '../etc/passwd' }));
-});
-
 test('no inventa aviso de receta y formatea producto', () => {
   const text = productText({ nombre: 'Producto', precio_venta: 1990, stock: 0, locales: [], receta_retenida: true });
   assert.match(text, /Sin unidades disponibles/);
@@ -64,4 +58,22 @@ test('health y dev conservan siempre su codigo', () => {
   const timeout = new HttpError(504, 'El catálogo tardó demasiado en responder.', { reason: 'timeout' });
   assert.equal(responseStatusFor('/health', timeout), 504);
   assert.equal(responseStatusFor('/dev/status', timeout), 504);
+});
+
+test('el ref es de 22 caracteres exactos, como define el OpenAPI de CLAMI', () => {
+  assert.equal(validateProductBody({ ref: 'Qm9uZGlhc0NsYW1pMjAyNg' }), 'Qm9uZGlhc0NsYW1pMjAyNg');
+  assert.throws(() => validateProductBody({ ref: 'ref_corta-1' }));
+  assert.throws(() => validateProductBody({ ref: 'Qm9uZGlhc0NsYW1pMjAyNgX' }));
+  assert.throws(() => validateProductBody({ ref: '../etc/passwd' }));
+});
+
+test('un producto con ref fuera de especificacion no llega a ManyChat', () => {
+  assert.throws(() => requireSearchResults({ resultados: [
+    { ref: 'corto', nombre: 'Producto', precio_venta: 1000, stock: 1, locales: [] }
+  ] }));
+});
+
+test('acepta stock decimal y locales como los define el esquema', () => {
+  const text = productText({ nombre: 'Jamón', precio_venta: 8990, stock: 2.5, locales: [{ nombre_local: 'Casa matriz', stock: 2.5 }], receta_retenida: false });
+  assert.match(text, /Casa matriz: 2\.5/);
 });

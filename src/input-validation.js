@@ -34,7 +34,7 @@ function validateSearchBody(body) {
 
 function validateProductBody(body) {
   if (Object.keys(body).some((key) => key !== 'ref')) throw new HttpError(400, 'Campos no permitidos.', {}, ERROR_CODES.REQUEST_VALIDATION_FAILED);
-  if (typeof body.ref !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(body.ref)) throw new HttpError(400, 'ref inválido.', {}, ERROR_CODES.REQUEST_VALIDATION_FAILED);
+  if (typeof body.ref !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(body.ref)) throw new HttpError(400, 'ref inválido.', {}, ERROR_CODES.REQUEST_VALIDATION_FAILED);
   return body.ref;
 }
 

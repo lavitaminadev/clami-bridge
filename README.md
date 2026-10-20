@@ -41,7 +41,7 @@ No subir `.env` real, `logs/` ni `data/` a un repositorio.
 
 ## Instalación en cPanel
 
-1. Subir y extraer esta carpeta en `/home/usuario-cpanel/clami-manychat-bridge`.
+1. Subir y extraer esta carpeta en `/home/usuario-cpanel/repositories/clami-bridge`.
 2. En **Setup Node.js App**, crear la app con Node 24.21.0.
 3. Asociar la URL al subdominio `catalogo.ejemplo.cl`.
 4. Configurar `app.js` como **Application startup file**.

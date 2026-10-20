@@ -25,6 +25,9 @@ const MANYCHAT_REQUEST_TIMEOUT_MS = 10_000;
 const CLAMI_TIMEOUT_MS = 7_000;
 const MAX_UPSTREAM_PER_MINUTE = 55;
 const MAX_UPSTREAM_PER_DAY = 2_700;
+// CLAMI limita a 1.500 productos distintos por dia, aparte del tope de consultas.
+// Se deja margen por si el mismo ref se pide desde otra integracion de la cuenta.
+const MAX_DISTINCT_PRODUCTS_PER_DAY = 1_400;
 const SEARCH_CACHE_TTL_MS = 45_000;
 const PRODUCT_CACHE_TTL_MS = 20_000;
 const MAX_CACHE_ENTRIES = 300;
@@ -34,7 +37,8 @@ const MAX_ADMIN_LOG_ENTRIES = 100;
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
 
 let writeQueue = Promise.resolve();
-let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null };
+let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null, productRefs: [] };
+let distinctProductRefs = new Set();
 const cache = new Map();
 let requestWindow = { start: Date.now(), count: 0 };
 const adminFailures = new Map();
@@ -94,11 +98,13 @@ async function loadState() {
     }
   } catch { /* First boot or unusable state: use secure defaults. */ }
   resetDailyStateIfNeeded();
+  distinctProductRefs = new Set(Array.isArray(runtimeState.productRefs) ? runtimeState.productRefs : []);
 }
 
 function resetDailyStateIfNeeded() {
   if (runtimeState.date !== currentDate()) {
-    runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: runtimeState.lastClami || null };
+    runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: runtimeState.lastClami || null, productRefs: [] };
+    distinctProductRefs = new Set();
   }
 }
 
@@ -307,7 +313,12 @@ function adminStatus() {
   return {
     ok: isConfigured(),
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-    quota: { upstreamCallsToday: runtimeState.upstreamCalls, maxPerDay: MAX_UPSTREAM_PER_DAY },
+    quota: {
+      upstreamCallsToday: runtimeState.upstreamCalls,
+      maxPerDay: MAX_UPSTREAM_PER_DAY,
+      distinctProductsToday: distinctProductRefs.size,
+      maxDistinctProductsPerDay: MAX_DISTINCT_PRODUCTS_PER_DAY
+    },
     cooldownSeconds: Math.max(0, Math.ceil((runtimeState.cooldownUntil - Date.now()) / 1000)),
     cacheEntries: cache.size,
     lastClami: runtimeState.lastClami || null,
@@ -359,6 +370,21 @@ async function recentAuditEntries(limit, date) {
   return entries.slice(-limit);
 }
 
+// CLAMI cuenta aparte los productos distintos consultados en el dia. Solo se registran
+// los que llegan a pedirse por `/producto/<ref>/`: un acierto de cache no consulta nada.
+// Que una busqueda devuelva un producto cuente o no para ese tope no esta dicho en la
+// especificacion; se toma la lectura estrecha y queda por confirmar con CLAMI.
+function registerDistinctProduct(ref) {
+  resetDailyStateIfNeeded();
+  if (distinctProductRefs.has(ref)) return;
+  if (distinctProductRefs.size >= MAX_DISTINCT_PRODUCTS_PER_DAY) {
+    throw new HttpError(503, "El catálogo alcanzó el límite interno diario. Intenta mañana.", { reason: "distinct_product_budget" });
+  }
+  distinctProductRefs.add(ref);
+  runtimeState.productRefs = [...distinctProductRefs];
+  void persistState();
+}
+
 async function handleSearch(body) {
   const { q, channel, isBarcode } = validateSearchBody(body);
   const cacheKey = `search:${q.toLocaleLowerCase('es-CL')}`;
@@ -381,6 +407,7 @@ async function handleProduct(body) {
   let product = cacheGet(cacheKey);
   const cacheHit = Boolean(product);
   if (!product) {
+    registerDistinctProduct(ref);
     product = requireProduct(await clamiGet(`/producto/${encodeURIComponent(ref)}/`));
     cacheSet(cacheKey, product, PRODUCT_CACHE_TTL_MS);
   }
@@ -392,6 +419,7 @@ async function handleProduct(body) {
 const OPERATIONAL_CODES = new Set([
   ERROR_CODES.CLAMI_COOLDOWN,
   ERROR_CODES.CLAMI_DAILY_BUDGET,
+  ERROR_CODES.CLAMI_DISTINCT_PRODUCT_BUDGET,
   ERROR_CODES.CLAMI_MINUTE_BUDGET,
   ERROR_CODES.CLAMI_RATE_LIMITED,
   ERROR_CODES.CLAMI_CREDENTIAL_OR_ORIGIN,

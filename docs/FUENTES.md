@@ -8,6 +8,33 @@
 
 Se usaron para endpoints, autenticación, límites, `ref`, códigos de barra y `receta_retenida`.
 
+El portal exige RUT de empresa y clave de acceso, así que la especificación no se puede
+consultar desde fuera. El contraste se hizo sobre el OpenAPI 3.0.3 entregado por el
+portal. Lo verificado contra esa especificación:
+
+| Punto | Especificación | En el puente |
+|---|---|---|
+| Base | `https://www.clami.cl/api/catalogo` | fija en código |
+| Autenticación | `Authorization: Bearer` o `X-Api-Key` | Bearer |
+| `q` | 3 a 120 caracteres | validado |
+| `ref` | 22 caracteres exactos | validado a la entrada y en la respuesta |
+| `precio_venta` | entero | validado |
+| `stock` | número, admite decimales, `null` en servicios | validado |
+| `locales[].stock` | número, no nulo | validado |
+| `receta_retenida` | `true` / `false` / `null` | los tres casos distinguidos |
+| Resultados por búsqueda | 10, sin paginación | recortado a 10 |
+| Código de barras | solo entrada, nunca vuelve | no se cachea ni se registra |
+| Consultas por minuto | 60 | tope propio en 55 |
+| Consultas por día | 3.000 | tope propio en 2.700 |
+| Productos distintos por día | 1.500 | tope propio en 1.400 |
+| Orígenes por credencial | 1 | pendiente de confirmar la IP con iHosting |
+| `429` | respetar `Retry-After`, no reintentar en bucle | bloqueo hasta que venza |
+| `401` / `403` | avisar al operador, no al cliente | mensaje genérico al cliente, código en los logs |
+
+Queda una lectura por confirmar con CLAMI: si un producto devuelto por `/buscar/` cuenta
+para el tope de productos distintos del día. El puente toma la lectura estrecha y cuenta
+solo los que llegan a pedirse por `/producto/<ref>/`.
+
 ## ManyChat — documentación pública oficial
 
 - https://help.manychat.com/hc/es/articles/14281285374364-Herramientas-de-desarrollo-Solicitud-externa

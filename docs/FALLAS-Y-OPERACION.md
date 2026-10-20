@@ -25,6 +25,7 @@ Por eso las rutas `/manychat/*` separan dos situaciones:
 | Timeout / red | `200` · `CLAMI_TIMEOUT` / `CLAMI_NETWORK_ERROR` | Revisar logs y disponibilidad CLAMI |
 | Respuesta CLAMI incompleta | `200` · `CLAMI_RESPONSE_INVALID` | El contrato del catálogo cambió; revisar antes de reintentar |
 | Cupo local agotado | `200` · `CLAMI_MINUTE_BUDGET` / `CLAMI_DAILY_BUDGET` | Esperar; revisar `/dev/status` |
+| Productos distintos del día agotados | `200` · `CLAMI_DISTINCT_PRODUCT_BUDGET` | Tope de CLAMI, 1.500 al día; `/dev/status` muestra el consumo |
 | Sin producto | `200` · texto sin resultados o `CLAMI_PRODUCT_NOT_FOUND` | Pedir otra búsqueda |
 | Secreto ManyChat incorrecto | `401` | Revisar cabecera `X-ManyChat-Secret` |
 | JSON / campos inválidos | `400` / `415` | Corregir la External Request |

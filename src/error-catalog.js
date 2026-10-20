@@ -36,6 +36,7 @@ const REASON_TO_CODE = Object.freeze({
   missing_configuration: ERROR_CODES.SERVICE_NOT_CONFIGURED,
   cooldown: ERROR_CODES.CLAMI_COOLDOWN,
   daily_budget: ERROR_CODES.CLAMI_DAILY_BUDGET,
+  distinct_product_budget: ERROR_CODES.CLAMI_DISTINCT_PRODUCT_BUDGET,
   minute_budget: ERROR_CODES.CLAMI_MINUTE_BUDGET,
   rate_limited: ERROR_CODES.CLAMI_RATE_LIMITED,
   credential_or_origin: ERROR_CODES.CLAMI_CREDENTIAL_OR_ORIGIN,

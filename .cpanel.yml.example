@@ -1,4 +1,4 @@
 ---
 deployment:
   tasks:
-    - export APP_ROOT="$HOME/clami-manychat-bridge" && /bin/bash "$APP_ROOT/scripts/deploy-check.sh" "$APP_ROOT"
+    - export APP_ROOT="$PWD" && /bin/bash "$APP_ROOT/scripts/deploy-check.sh" "$APP_ROOT"

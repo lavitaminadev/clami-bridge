@@ -8,7 +8,7 @@ function validStock(value) {
 
 function normalizeProduct(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  if (typeof value.ref !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value.ref)) return null;
+  if (typeof value.ref !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(value.ref)) return null;
   if (typeof value.nombre !== 'string' || !value.nombre.trim()) return null;
   if (!Number.isInteger(value.precio_venta) || value.precio_venta < 0) return null;
   if (!validStock(value.stock) || !Array.isArray(value.locales)) return null;
