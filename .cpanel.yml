@@ -16,6 +16,14 @@ deployment:
     # detiene el despliegue si falla: una aplicacion publicada sin su recordatorio de
     # salud funciona; una que no se publico porque el crontab dio error, no.
     #
+    # La URL va escrita aqui para que el despliegue no dependa de ningun paso manual.
+    # El dominio ya es publico desde que AutoSSL emitio el certificado y quedo en los
+    # registros de Certificate Transparency; el usuario de la cuenta, que si es medio
+    # credencial, no aparece en ninguna parte del repositorio.
+    #
+    # Quien prefiera no tenerlo aqui puede quitar la URL de esta linea y dejarla en
+    # ~/.clami-bridge-health-url, que el script sigue aceptando.
+    #
     # Entre comillas y sin dos puntos seguidos de espacio: cPanel lee este archivo
     # como YAML y un ": " en un escalar sin comillas lo convierte en un mapa.
-    - "export APP_ROOT=\"$PWD\" && /bin/bash \"$APP_ROOT/scripts/setup-crontab.sh\" \"$APP_ROOT\" || echo CRON-FALLO-revisalo-con-scripts-setup-crontab-sh"
+    - "export APP_ROOT=\"$PWD\" && /bin/bash \"$APP_ROOT/scripts/setup-crontab.sh\" \"$APP_ROOT\" https://catalogo.farmaciavittae.cl/health || echo CRON-FALLO-revisalo-con-scripts-setup-crontab-sh"

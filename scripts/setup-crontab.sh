@@ -6,28 +6,31 @@ set -euo pipefail
 # Reemplaza solamente sus propias lineas, reconocidas por el marcador, y conserva
 # intactas las demas. Correrlo cuando no hubo cambios deja el crontab igual.
 #
-# La URL no vive en el repositorio: se lee de un archivo de la cuenta, porque este
-# repositorio es publico y el dominio es dato del hosting. Crear una sola vez:
+# Uso:  setup-crontab.sh <raiz-de-la-app> [url-de-salud]
 #
-#   echo "https://catalogo.midominio.cl/health" > ~/.clami-bridge-health-url
-#
-# Sin ese archivo el script no instala nada y lo dice, sin detener el despliegue.
+# La URL llega como segundo argumento desde .cpanel.yml. Si no viene, se lee de
+# ~/.clami-bridge-health-url, para quien prefiera no tener su dominio en un
+# repositorio publico. Sin ninguna de las dos no se instala nada y se dice, sin
+# detener el despliegue.
 
 app_root="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 url_file="${CLAMI_BRIDGE_HEALTH_URL_FILE:-$HOME/.clami-bridge-health-url}"
 marker="# clami-bridge:salud"
 
-if [ ! -f "$url_file" ]; then
-  echo "CRON: falta $url_file; no se instala la tarea de salud."
-  exit 0
+health_url="${2:-}"
+if [ -z "$health_url" ]; then
+  if [ ! -f "$url_file" ]; then
+    echo "CRON: no se indico la URL de salud ni existe $url_file; no se instala la tarea."
+    exit 0
+  fi
+  health_url="$(head -n 1 "$url_file")"
 fi
-
-health_url="$(head -n 1 "$url_file" | tr -d '[:space:]')"
+health_url="$(printf %s "$health_url" | tr -d '[:space:]')"
 
 case "$health_url" in
   https://*/health) : ;;
   *)
-    echo "CRON: la URL de $url_file debe ser https y terminar en /health; no se instala." >&2
+    echo "CRON: la URL de salud debe ser https y terminar en /health; no se instala." >&2
     exit 0
     ;;
 esac

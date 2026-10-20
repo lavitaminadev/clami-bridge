@@ -35,7 +35,7 @@ test-data/
 !package-lock.json
 
 # Dependencias y cachés
-node_modules/
+node_modules
 tmp/
 .npm/
 .cache/
