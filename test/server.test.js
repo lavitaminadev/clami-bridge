@@ -89,3 +89,33 @@ test('cada fallo de CLAMI llega a ManyChat con su propio codigo y en 200', () =>
   assert.equal(responseStatusFor('/manychat/producto', noExiste), 200);
   assert.equal(responseStatusFor('/manychat/buscar', malaRespuesta), 200);
 });
+
+// Guarda contra la clase de error que aparecio dos veces en este proyecto: un
+// codigo referenciado que nunca se definio vale `undefined`, el error cae en el
+// codigo de reserva del estado HTTP, y deja de contar como condicion de operacion.
+// Paso con el 404 del catalogo y con el cupo de productos distintos.
+
+const fuente = (...partes) => require('node:fs').readFileSync(require('node:path').join(__dirname, '..', ...partes), 'utf8');
+const referenciados = (texto) => [...texto.matchAll(/ERROR_CODES\.([A-Z_]+)/g)].map((m) => m[1]);
+
+test('cada codigo del catalogo vale igual que su nombre', () => {
+  const { ERROR_CODES } = require('../src/error-catalog');
+  for (const [nombre, valor] of Object.entries(ERROR_CODES)) {
+    assert.equal(valor, nombre, `ERROR_CODES.${nombre} no coincide con su nombre`);
+  }
+});
+
+test('ningun codigo referenciado en el proyecto falta del catalogo', () => {
+  const { ERROR_CODES } = require('../src/error-catalog');
+  const archivos = [
+    ['src', 'error-catalog.js'], ['src', 'clami-response.js'], ['src', 'input-validation.js'], ['server.js']
+  ];
+  let vistos = 0;
+  for (const partes of archivos) {
+    for (const nombre of referenciados(fuente(...partes))) {
+      vistos += 1;
+      assert.ok(Object.hasOwn(ERROR_CODES, nombre), `${partes.join('/')} usa ERROR_CODES.${nombre}, que no existe`);
+    }
+  }
+  assert.ok(vistos > 20, 'la busqueda de referencias no encontro casi nada');
+});

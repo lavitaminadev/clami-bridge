@@ -558,6 +558,12 @@ module.exports = {
   cacheSet,
   acquireSingleInstanceLock,
   clamiGet,
+  loadState,
+  adminStatus,
+  purgeOldLogs,
+  registerDistinctProduct,
+  LOG_RETENTION_DAYS,
+  MAX_DISTINCT_PRODUCTS_PER_DAY,
   requestHandler,
   releaseSingleInstanceLock,
   MAX_CACHE_ENTRIES
