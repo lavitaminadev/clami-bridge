@@ -32,6 +32,9 @@ async function arrancar(extra = {}) {
     MANYCHAT_SECRET: 'secreto-de-prueba-para-manychat',
     ...extra
   };
+  // Una clave con valor undefined llega al hijo como la cadena "undefined": para
+  // probar la ausencia de una variable hay que quitarla del entorno.
+  for (const [clave, valor] of Object.entries(extra)) if (valor === undefined) delete env[clave];
   const hijo = spawn(process.execPath, [path.join(RAIZ, 'app.js')], { env, cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'] });
   let salida = '';
   hijo.stdout.on('data', (d) => { salida += d; });
@@ -183,5 +186,52 @@ test('una segunda instancia espera antes de rendirse', async () => {
     primera.hijo.kill();
     await esperar(300);
     fs.rmSync(primera.dir, { recursive: true, force: true });
+  }
+});
+
+test('un PORT invalido detiene el arranque con un mensaje claro', async () => {
+  // Antes no detenia nada: /health pasaba a 503 y tanto el README como la guia de
+  // fallas mandan a revisar las credenciales ante ese 503, de modo que el operador
+  // habria buscado el problema donde no estaba.
+  // Los espacios alrededor se recortan a proposito: un valor pegado del panel con
+  // un espacio de mas es un descuido, no una configuracion distinta.
+  for (const valor of ['tres mil', '0', '70000', '-1', '3e3']) {
+    const { dir, hijo, salida } = await arrancar({ PORT: valor });
+    const codigo = await new Promise((listo) => hijo.on('exit', listo));
+    assert.equal(codigo, 1, `PORT="${valor}" no detuvo el arranque`);
+    assert.match(salida(), /PORT invalido/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sin PORT la aplicacion no se queja del puerto: lo entrega Passenger', async () => {
+  // Sin PORT se usa el 3000 de reserva, que en una maquina de desarrollo puede
+  // estar ocupado por otra cosa. Lo que se fija aqui es que la ausencia de la
+  // variable no se trate como un error de configuracion; que el 3000 este libre
+  // es del entorno y no del proyecto.
+  const { dir, hijo, salida } = await arrancar({ PORT: undefined });
+  try {
+    const arranco = await esperarArranque(dir, hijo);
+    assert.equal(salida().includes('PORT invalido'), false, 'trato la ausencia de PORT como invalido');
+    if (!arranco) assert.match(salida(), /EADDRINUSE/, `no arranco por otra razon: ${salida()}`);
+  } finally {
+    hijo.kill();
+    await esperar(300);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('/health deja de depender del puerto y mide solo las credenciales', () => {
+  const { isConfigured } = require('../server');
+  const previo = { ...process.env };
+  try {
+    process.env.CLAMI_API_KEY = 'clami_cat_x';
+    process.env.MANYCHAT_SECRET = 's';
+    assert.equal(isConfigured(), true);
+    delete process.env.CLAMI_API_KEY;
+    assert.equal(isConfigured(), false);
+  } finally {
+    process.env.CLAMI_API_KEY = previo.CLAMI_API_KEY;
+    process.env.MANYCHAT_SECRET = previo.MANYCHAT_SECRET;
   }
 });

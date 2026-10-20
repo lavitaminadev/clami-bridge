@@ -10,6 +10,8 @@ const { requireProduct, requireSearchResults } = require('./src/clami-response')
 const { readJsonBody, validateSearchBody, validateProductBody } = require('./src/input-validation');
 const { productText } = require('./src/product-presentation');
 
+// Passenger entrega el puerto por el entorno. El 3000 es solo para ejecutar la
+// aplicacion a mano fuera del hosting; bajo Passenger nunca se usa.
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const CLAMI_BASE_URL = 'https://www.clami.cl/api/catalogo';
 const LOG_DIR = path.resolve(process.env.LOG_DIR || path.join(__dirname, 'logs'));
@@ -110,8 +112,23 @@ function safeError(error) {
   return error instanceof Error ? error.message.replace(/[\r\n]/g, ' ').slice(0, 200) : 'unknown_error';
 }
 
+// Mide una sola cosa: si la aplicacion tiene con que atender a ManyChat y a CLAMI.
+// El puerto se comprueba aparte, al arrancar. Mezclarlos hacia que un PORT mal
+// escrito en el panel dejara /health en 503, y tanto el README como la guia de
+// fallas mandan a revisar las credenciales ante ese 503: el operador habria
+// buscado el problema donde no estaba.
 function isConfigured() {
-  return Boolean(process.env.CLAMI_API_KEY && process.env.MANYCHAT_SECRET && Number.isInteger(PORT) && PORT > 0);
+  return Boolean(process.env.CLAMI_API_KEY && process.env.MANYCHAT_SECRET);
+}
+
+// Un valor presente pero invalido es un error de configuracion, no algo que haya
+// que suponer. Se avisa al arrancar, con el valor recibido, en vez de escuchar en
+// un puerto que nadie pidio.
+function assertUsablePort() {
+  if (process.env.PORT === undefined) return;
+  if (!/^\d+$/.test(String(process.env.PORT).trim()) || !Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+    throw new Error(`PORT invalido: "${process.env.PORT}". Dejarlo sin definir para que lo entregue Passenger.`);
+  }
 }
 
 function constantTimeMatch(actual, expected) {
@@ -645,6 +662,7 @@ async function start() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(currentDate())) {
     throw new Error('Node sin soporte horario completo: la fecha no tiene formato AAAA-MM-DD');
   }
+  assertUsablePort();
   await fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 });
   await acquireSingleInstanceLock();
   await loadState();
@@ -709,6 +727,8 @@ module.exports = {
   cacheSet,
   acquireSingleInstanceLock,
   deployedCommit,
+  isConfigured,
+  assertUsablePort,
   sourceTag,
   clamiGet,
   loadState,

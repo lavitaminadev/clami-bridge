@@ -408,7 +408,8 @@ La tabla completa de códigos y respuestas está en
 [docs/FALLAS-Y-OPERACION.md](docs/FALLAS-Y-OPERACION.md). Los tres más frecuentes:
 
 - **`/health` devuelve `{"ok":false}`** — falta `CLAMI_API_KEY` o `MANYCHAT_SECRET`.
-  Revisar variables y reiniciar.
+  Mide solo eso: un puerto mal puesto no llega a este punto, porque detiene el
+  arranque con su propio mensaje. Revisar variables y reiniciar.
 - **`500` sin una sola línea en el registro de Passenger** — el error es de Apache, no de
   Node. Revisar el `.htaccess` del Document Root del subdominio antes que nada: si hereda
   reglas de WordPress, usar `deployment/htaccess-node-root.template`.
