@@ -23,9 +23,6 @@ ACCESOS*
 CLAVES*
 *cookies*
 
-# Configuración real de despliegue: lleva rutas del servidor y del hosting.
-# El repositorio publica solo la plantilla.
-.cpanel.yml
 
 # Estado en ejecución y registros. Reflejan operación real y crecen sin límite.
 logs/

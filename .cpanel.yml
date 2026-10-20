@@ -1,0 +1,21 @@
+---
+# Pipeline de Git Deployment de cPanel.
+#
+# Corre con la raiz del repositorio como directorio de trabajo, asi que APP_ROOT sale
+# de $PWD y no de una ruta fija: cPanel clona donde el operador haya indicado.
+#
+# No compila ni instala dependencias: este proyecto no tiene. deploy-check.sh aborta
+# si alguna vez se agregan, antes de tocar el node_modules que CloudLinux enlaza.
+# Su ultimo paso toca tmp/restart.txt, de modo que un Deploy deja el codigo nuevo
+# corriendo sin pasar por Setup Node.js App.
+deployment:
+  tasks:
+    - export APP_ROOT="$PWD" && /bin/bash "$APP_ROOT/scripts/deploy-check.sh" "$APP_ROOT"
+
+    # La tarea programada se instala con el despliegue y no a mano. Va al final y no
+    # detiene el despliegue si falla: una aplicacion publicada sin su recordatorio de
+    # salud funciona; una que no se publico porque el crontab dio error, no.
+    #
+    # Entre comillas y sin dos puntos seguidos de espacio: cPanel lee este archivo
+    # como YAML y un ": " en un escalar sin comillas lo convierte en un mapa.
+    - "export APP_ROOT=\"$PWD\" && /bin/bash \"$APP_ROOT/scripts/setup-crontab.sh\" \"$APP_ROOT\" || echo CRON-FALLO-revisalo-con-scripts-setup-crontab-sh"
