@@ -77,3 +77,15 @@ test('acepta stock decimal y locales como los define el esquema', () => {
   const text = productText({ nombre: 'Jamón', precio_venta: 8990, stock: 2.5, locales: [{ nombre_local: 'Casa matriz', stock: 2.5 }], receta_retenida: false });
   assert.match(text, /Casa matriz: 2\.5/);
 });
+
+test('cada fallo de CLAMI llega a ManyChat con su propio codigo y en 200', () => {
+  const { ERROR_CODES, HttpError } = require('../src/error-catalog');
+  // Un throw sin `reason` cae en el codigo por defecto del estado HTTP: el 404 del
+  // catalogo se volvia ROUTE_NOT_FOUND y salia como 404, que ManyChat descarta.
+  const noExiste = new HttpError(404, 'Producto no encontrado.', { clamiStatus: 404, reason: 'product_not_found' });
+  const malaRespuesta = new HttpError(502, 'El catálogo no respondió correctamente.', { clamiStatus: 500, reason: 'upstream_error' });
+  assert.equal(noExiste.errorCode, ERROR_CODES.CLAMI_PRODUCT_NOT_FOUND);
+  assert.equal(malaRespuesta.errorCode, ERROR_CODES.CLAMI_UPSTREAM_ERROR);
+  assert.equal(responseStatusFor('/manychat/producto', noExiste), 200);
+  assert.equal(responseStatusFor('/manychat/buscar', malaRespuesta), 200);
+});

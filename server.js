@@ -233,12 +233,12 @@ async function clamiGet(relativePath) {
     if (response.status === 404) {
       runtimeState.lastClami = { at: new Date().toISOString(), status: 404, outcome: 'not_found' };
       void persistState();
-      throw new HttpError(404, 'Producto no encontrado.', { clamiStatus: 404 });
+      throw new HttpError(404, 'Producto no encontrado.', { clamiStatus: 404, reason: 'product_not_found' });
     }
     if (!response.ok) {
       runtimeState.lastClami = { at: new Date().toISOString(), status: response.status, outcome: 'upstream_error' };
       void persistState();
-      throw new HttpError(502, 'El catálogo no respondió correctamente.', { clamiStatus: response.status });
+      throw new HttpError(502, 'El catálogo no respondió correctamente.', { clamiStatus: response.status, reason: 'upstream_error' });
     }
     const data = await response.json();
     runtimeState.lastClami = { at: new Date().toISOString(), status: response.status, outcome: 'ok' };
