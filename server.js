@@ -11,8 +11,17 @@ const { readJsonBody, validateSearchBody, validateProductBody } = require('./src
 const { productText } = require('./src/product-presentation');
 
 // Passenger entrega el puerto por el entorno. El 3000 es solo para ejecutar la
-// aplicacion a mano fuera del hosting; bajo Passenger nunca se usa.
-const PORT = Number.parseInt(process.env.PORT || '3000', 10);
+// aplicacion a mano fuera del hosting.
+//
+// Un valor que no sirva como numero cae al de reserva en vez de propagarse como
+// NaN hasta `listen`, donde el fallo no diria nada del puerto. El aviso de que eso
+// ocurrio lo da `portWarning()`.
+const DEFAULT_PORT = 3000;
+const PORT = (() => {
+  const crudo = String(process.env.PORT ?? DEFAULT_PORT).trim();
+  const numero = Number.parseInt(crudo, 10);
+  return /^\d+$/.test(crudo) && Number.isInteger(numero) && numero >= 1 && numero <= 65535 ? numero : DEFAULT_PORT;
+})();
 const CLAMI_BASE_URL = 'https://www.clami.cl/api/catalogo';
 const LOG_DIR = path.resolve(process.env.LOG_DIR || path.join(__dirname, 'logs'));
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
@@ -121,14 +130,19 @@ function isConfigured() {
   return Boolean(process.env.CLAMI_API_KEY && process.env.MANYCHAT_SECRET);
 }
 
-// Un valor presente pero invalido es un error de configuracion, no algo que haya
-// que suponer. Se avisa al arrancar, con el valor recibido, en vez de escuchar en
-// un puerto que nadie pidio.
-function assertUsablePort() {
-  if (process.env.PORT === undefined) return;
-  if (!/^\d+$/.test(String(process.env.PORT).trim()) || !Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
-    throw new Error(`PORT invalido: "${process.env.PORT}". Dejarlo sin definir para que lo entregue Passenger.`);
-  }
+// Un PORT presente pero inservible como numero se anota y se sigue con el de
+// reserva. No detiene el arranque a proposito: Passenger decide como entrega el
+// puerto y esa forma puede cambiar entre versiones, de modo que un diagnostico
+// nunca debe poder dejar el servicio sin levantar. El aviso queda en el registro
+// de arranque y en /dev/status.
+function portWarning() {
+  if (process.env.PORT === undefined) return null;
+  // Se juzga el valor recibido, no el ya resuelto: `0` y `70000` caen al de
+  // reserva, que si es valido, y mirando el resuelto no avisarian de nada.
+  const crudo = String(process.env.PORT).trim();
+  const numero = Number.parseInt(crudo, 10);
+  if (/^\d+$/.test(crudo) && numero >= 1 && numero <= 65535) return null;
+  return `PORT no utilizable como numero: "${process.env.PORT}". Se usa ${PORT}`;
 }
 
 function constantTimeMatch(actual, expected) {
@@ -458,6 +472,7 @@ function adminStatus() {
   return {
     ok: isConfigured(),
     commit: COMMIT,
+    portWarning: portWarning(),
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     quota: {
       upstreamCallsToday: runtimeState.upstreamCalls,
@@ -662,7 +677,8 @@ async function start() {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(currentDate())) {
     throw new Error('Node sin soporte horario completo: la fecha no tiene formato AAAA-MM-DD');
   }
-  assertUsablePort();
+  const avisoPuerto = portWarning();
+  if (avisoPuerto) process.stderr.write(`${avisoPuerto}\n`);
   await fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 });
   await acquireSingleInstanceLock();
   await loadState();
@@ -728,7 +744,7 @@ module.exports = {
   acquireSingleInstanceLock,
   deployedCommit,
   isConfigured,
-  assertUsablePort,
+  portWarning,
   sourceTag,
   clamiGet,
   loadState,

@@ -189,17 +189,25 @@ test('una segunda instancia espera antes de rendirse', async () => {
   }
 });
 
-test('un PORT invalido detiene el arranque con un mensaje claro', async () => {
-  // Antes no detenia nada: /health pasaba a 503 y tanto el README como la guia de
-  // fallas mandan a revisar las credenciales ante ese 503, de modo que el operador
-  // habria buscado el problema donde no estaba.
-  // Los espacios alrededor se recortan a proposito: un valor pegado del panel con
-  // un espacio de mas es un descuido, no una configuracion distinta.
-  for (const valor of ['tres mil', '0', '70000', '-1', '3e3']) {
-    const { dir, hijo, salida } = await arrancar({ PORT: valor });
-    const codigo = await new Promise((listo) => hijo.on('exit', listo));
-    assert.equal(codigo, 1, `PORT="${valor}" no detuvo el arranque`);
-    assert.match(salida(), /PORT invalido/);
+test('un PORT inservible se anota pero no detiene el arranque', async () => {
+  // Antes el puerto entraba en isConfigured(), de modo que un valor mal escrito
+  // dejaba /health en 503 y los documentos mandan a revisar las credenciales ante
+  // ese 503: el operador habria buscado donde no estaba.
+  //
+  // Pero tampoco se detiene el arranque: Passenger decide como entrega el puerto y
+  // esa forma puede cambiar entre versiones. Un diagnostico no puede ser una nueva
+  // manera de que el servicio no levante.
+  //
+  // Los espacios alrededor se recortan: un valor pegado del panel con un espacio
+  // de mas es un descuido, no una configuracion distinta.
+  const { dir, hijo, salida } = await arrancar({ PORT: 'tres mil' });
+  try {
+    const arranco = await esperarArranque(dir, hijo);
+    assert.match(salida(), /PORT no utilizable/);
+    if (!arranco) assert.match(salida(), /EADDRINUSE/, `no arranco por otra razon: ${salida()}`);
+  } finally {
+    hijo.kill();
+    await esperar(300);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -233,5 +241,28 @@ test('/health deja de depender del puerto y mide solo las credenciales', () => {
   } finally {
     process.env.CLAMI_API_KEY = previo.CLAMI_API_KEY;
     process.env.MANYCHAT_SECRET = previo.MANYCHAT_SECRET;
+  }
+});
+
+test('el aviso de puerto juzga el valor recibido, no el de reserva', () => {
+  // `0` y `70000` resuelven al de reserva, que si es valido: mirando el resuelto
+  // no avisarian de nada y el operador no sabria que su valor se ignoro.
+  const previo = process.env.PORT;
+  try {
+    for (const valor of ['tres mil', '0', '70000', '-1', '3e3']) {
+      delete require.cache[require.resolve('../server')];
+      process.env.PORT = valor;
+      const { portWarning } = require('../server');
+      assert.match(portWarning() || '', /no utilizable/, `PORT="${valor}" no aviso`);
+    }
+    for (const valor of ['8080', ' 8080 ', '1', '65535']) {
+      delete require.cache[require.resolve('../server')];
+      process.env.PORT = valor;
+      const { portWarning } = require('../server');
+      assert.equal(portWarning(), null, `PORT="${valor}" aviso sin motivo`);
+    }
+  } finally {
+    if (previo === undefined) delete process.env.PORT; else process.env.PORT = previo;
+    delete require.cache[require.resolve('../server')];
   }
 });
