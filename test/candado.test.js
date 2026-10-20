@@ -33,7 +33,7 @@ test('el primer arranque toma el candado y escribe su pid', async () => {
 test('un candado de un proceso vivo impide arrancar', async () => {
   // El pid de este mismo proceso existe, asi que el candado cuenta como activo.
   fs.writeFileSync(ARCHIVO, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
-  await assert.rejects(acquireSingleInstanceLock(), (error) => error.status === 503);
+  await assert.rejects(acquireSingleInstanceLock({ timeoutMs: 300 }), (error) => error.status === 503);
   fs.unlinkSync(ARCHIVO);
 });
 
@@ -51,7 +51,7 @@ test('un candado ilegible se trata como activo', async () => {
   // Preferir el falso positivo: borrar un candado que no se pudo leer podria dejar
   // dos procesos consumiendo la misma cuota.
   fs.writeFileSync(ARCHIVO, 'esto no es json');
-  await assert.rejects(acquireSingleInstanceLock(), (error) => error.status === 503);
+  await assert.rejects(acquireSingleInstanceLock({ timeoutMs: 300 }), (error) => error.status === 503);
   fs.unlinkSync(ARCHIVO);
 });
 

@@ -36,6 +36,17 @@ const ADMIN_MAX_FAILURES = 3;
 const ADMIN_LOCK_MS = 40_000;
 const MAX_ADMIN_LOG_ENTRIES = 100;
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
+const MAX_LOG_FILE_BYTES = 8 * 1024 * 1024;
+// El dueño del candado actualiza su marca de tiempo cada 15 s. Un candado cuya
+// marca lleva mas de 45 s sin moverse pertenece a un proceso que ya no esta, sin
+// importar que el PID escrito exista: en un hosting compartido los PID se reciclan
+// y confiar solo en ellos puede dejar la aplicacion sin arrancar para siempre.
+const LOCK_HEARTBEAT_MS = 15_000;
+const LOCK_STALE_MS = 45_000;
+// Passenger puede levantar el proceso nuevo antes de que el viejo termine. Esperar
+// evita que el nuevo muera en el intento y Passenger entre en un ciclo de fallos.
+const LOCK_ACQUIRE_TIMEOUT_MS = Number.parseInt(process.env.CLAMI_BRIDGE_LOCK_TIMEOUT_MS || 30000, 10);
+const LOCK_RETRY_MS = 1_000;
 
 // Que version esta corriendo no se puede deducir desde fuera: entre dos despliegues
 // pueden cambiar solo pruebas o documentacion, y un cambio de comportamiento puede
@@ -89,6 +100,7 @@ const adminFailures = new Map();
 const upstreamMinuteCounters = new Map();
 const startedAt = Date.now();
 let instanceLockHeld = false;
+let lockHeartbeat = null;
 
 function currentDate() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
@@ -113,6 +125,25 @@ function logFileName() {
   return `bridge-${currentDate()}.jsonl`;
 }
 
+// El trafico sin autenticar no tiene limite propio, asi que el archivo del dia
+// podria crecer sin fin. Al llegar al tope se deja de escribir y se anota una sola
+// vez: perder detalle es preferible a llenar el disco de la cuenta.
+let logTruncatedAt = 0;
+
+async function logFileWithinLimit() {
+  const archivo = path.join(LOG_DIR, logFileName());
+  const stats = await fs.stat(archivo).catch(() => null);
+  if (!stats || stats.size < MAX_LOG_FILE_BYTES) {
+    logTruncatedAt = 0;
+    return true;
+  }
+  if (logTruncatedAt !== stats.size) {
+    logTruncatedAt = stats.size;
+    process.stderr.write('log_size_limit_reached\n');
+  }
+  return false;
+}
+
 function audit(event, fields = {}) {
   // Se filtra al escribir, no solo al leer: un campo agregado por error en una
   // llamada futura no debe llegar nunca al disco, porque desde ahi ya no hay
@@ -120,7 +151,10 @@ function audit(event, fields = {}) {
   const entry = JSON.stringify(sanitizeAuditEntry({ ts: new Date().toISOString(), event, ...fields })) + '\n';
   writeQueue = writeQueue
     .then(() => fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 }))
-    .then(() => fs.appendFile(path.join(LOG_DIR, logFileName()), entry, { encoding: 'utf8', mode: 0o600 }))
+    .then(async () => {
+      if (!(await logFileWithinLimit())) return;
+      await fs.appendFile(path.join(LOG_DIR, logFileName()), entry, { encoding: 'utf8', mode: 0o600 });
+    })
     .catch(() => { process.stderr.write('audit_write_failed\n'); });
   return writeQueue;
 }
@@ -174,16 +208,21 @@ function persistState() {
 }
 
 async function lockOwnerIsRunning() {
+  // Sin latido reciente el dueño no esta vivo, aunque su PID exista: es la unica
+  // forma de distinguir un proceso que sigue trabajando de un PID reciclado.
+  const latido = await fs.stat(INSTANCE_LOCK_FILE).catch(() => null);
+  if (latido && Date.now() - latido.mtimeMs > LOCK_STALE_MS) return false;
+
   try {
     const owner = JSON.parse(await fs.readFile(INSTANCE_LOCK_FILE, 'utf8'));
-    // A partially-written or malformed lock is treated as active. Removing it
-    // optimistically could let two Passenger workers run at the same time.
+    // Un candado a medio escribir o ilegible se trata como activo: borrarlo por
+    // optimismo podria dejar dos procesos consumiendo la misma cuota.
     if (!Number.isInteger(owner.pid) || owner.pid <= 0) return true;
     try {
       process.kill(owner.pid, 0);
       return true;
     } catch (error) {
-      // EPERM still means the PID exists; only ESRCH proves a stale lock.
+      // EPERM significa que el PID existe; solo ESRCH prueba que no.
       return error && error.code !== 'ESRCH';
     }
   } catch {
@@ -191,22 +230,39 @@ async function lockOwnerIsRunning() {
   }
 }
 
-async function acquireSingleInstanceLock() {
+function startLockHeartbeat() {
+  lockHeartbeat = setInterval(() => {
+    const ahora = new Date();
+    void fs.utimes(INSTANCE_LOCK_FILE, ahora, ahora).catch(() => undefined);
+  }, LOCK_HEARTBEAT_MS);
+  lockHeartbeat.unref();
+}
+
+async function acquireSingleInstanceLock({ timeoutMs = LOCK_ACQUIRE_TIMEOUT_MS } = {}) {
   await fs.mkdir(DATA_DIR, { recursive: true, mode: 0o700 });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const limite = Date.now() + timeoutMs;
+
+  for (;;) {
     try {
       const handle = await fs.open(INSTANCE_LOCK_FILE, 'wx', 0o600);
       await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + '\n', 'utf8');
       await handle.close();
       instanceLockHeld = true;
+      startLockHeartbeat();
       return;
     } catch (error) {
       if (!error || error.code !== 'EEXIST') throw error;
-      if (attempt === 0 && !(await lockOwnerIsRunning())) {
+
+      if (!(await lockOwnerIsRunning())) {
         await fs.unlink(INSTANCE_LOCK_FILE).catch(() => undefined);
         continue;
       }
-      throw new HttpError(503, 'Ya existe una instancia activa.', { reason: 'state_lock_unavailable' }, ERROR_CODES.STATE_LOCK_UNAVAILABLE);
+      // El dueño sigue vivo. En un reinicio rodante termina en segundos, asi que
+      // se espera antes de rendirse en vez de morir al primer intento.
+      if (Date.now() >= limite) {
+        throw new HttpError(503, 'Ya existe una instancia activa.', { reason: 'state_lock_unavailable' }, ERROR_CODES.STATE_LOCK_UNAVAILABLE);
+      }
+      await new Promise((listo) => setTimeout(listo, LOCK_RETRY_MS));
     }
   }
 }
@@ -214,8 +270,17 @@ async function acquireSingleInstanceLock() {
 async function releaseSingleInstanceLock() {
   if (!instanceLockHeld) return;
   instanceLockHeld = false;
+  if (lockHeartbeat) clearInterval(lockHeartbeat);
   await fs.unlink(INSTANCE_LOCK_FILE).catch(() => undefined);
 }
+
+// Red de seguridad para cualquier salida: una excepcion sin capturar, un exit(1)
+// desde app.js o un cierre normal. No alcanza para una terminacion forzada, y para
+// eso esta el latido.
+process.on('exit', () => {
+  if (!instanceLockHeld) return;
+  try { fsSync.unlinkSync(INSTANCE_LOCK_FILE); } catch { /* ya no estaba */ }
+});
 
 function cacheGet(key) {
   const value = cache.get(key);
@@ -224,6 +289,11 @@ function cacheGet(key) {
     cache.delete(key);
     return null;
   }
+  // Reinsertar mueve la entrada al final del orden de iteracion, de modo que el
+  // desalojo quita lo menos usado y no lo mas antiguo: sin esto, el termino mas
+  // consultado era el primero en salir.
+  cache.delete(key);
+  cache.set(key, value);
   return value.value;
 }
 
@@ -344,7 +414,12 @@ function ensureAdmin(request, baseLog = {}) {
   // only the failed credential prevents an invalid token from locking out the real one.
   const fingerprint = crypto.createHash('sha256').update(header || 'missing').digest('hex').slice(0, 32);
   const failure = adminFailures.get(fingerprint);
-  if (failure?.lockedUntil > now) throw new HttpError(429, 'No autorizado.', { reason: 'admin_locked', retryAfter: Math.max(1, Math.ceil((failure.lockedUntil - now) / 1000)) });
+  if (failure?.lockedUntil > now) {
+    // Tambien se registra: sin esta linea, del cuarto intento en adelante no
+    // quedaba rastro y los registros subrepresentaban un intento sostenido.
+    void audit('admin_auth_failed', { ...baseLog, status: 429, reason: 'admin_locked' });
+    throw new HttpError(429, 'No autorizado.', { reason: 'admin_locked', retryAfter: Math.max(1, Math.ceil((failure.lockedUntil - now) / 1000)) });
+  }
   const attempts = (failure?.attempts || 0) + 1;
   const lockedUntil = attempts >= ADMIN_MAX_FAILURES ? now + ADMIN_LOCK_MS : 0;
   adminFailures.set(fingerprint, { attempts: lockedUntil ? 0 : attempts, lockedUntil, updatedAt: now });
@@ -564,6 +639,12 @@ async function requestHandler(request, response) {
 }
 
 async function start() {
+  // El nombre de cada archivo de registro sale de esta fecha. Un Node compilado sin
+  // ICU completo daria otro formato, el nombre llevaria barras, la escritura
+  // fallaria y la limpieza dejaria de reconocer los archivos. Mejor no arrancar.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(currentDate())) {
+    throw new Error('Node sin soporte horario completo: la fecha no tiene formato AAAA-MM-DD');
+  }
   await fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 });
   await acquireSingleInstanceLock();
   await loadState();
@@ -633,6 +714,8 @@ module.exports = {
   loadState,
   adminStatus,
   purgeOldLogs,
+  purgeEphemeralState,
+  lockOwnerIsRunning,
   registerDistinctProduct,
   assertDistinctProductBudget,
   LOG_RETENTION_DAYS,

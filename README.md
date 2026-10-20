@@ -192,10 +192,22 @@ por minuto se vuelve 110 y el bloqueo tras un `429` solo frena a uno.
 El arranque toma `data/single-instance.lock` de forma exclusiva. Una segunda instancia se
 niega a arrancar antes de atender tráfico.
 
-**Lo que cuesta:** es una barrera, no una solución. Para varios procesos de verdad hace
-falta estado compartido —Redis o equivalente— para cuota, caché, cooldown y bloqueos. **No
-habilitar múltiples instancias hasta agregarlo.** Y hay riesgos propios del candado, en la
-sección de límites.
+El candado se cuida de los dos modos en que un archivo así suele fallar:
+
+- **Su dueño deja una marca de tiempo cada 15 segundos.** Un candado cuya marca lleva más
+  de 45 sin moverse pertenece a un proceso que ya no está, y se retoma. Así, un PID
+  reciclado por otro proceso del hosting no puede hacerlo pasar por vivo.
+- **Un arranque que lo encuentra ocupado espera hasta 30 segundos** antes de rendirse.
+  En un reinicio en el que el proceso nuevo nace antes de que muera el viejo, el nuevo
+  llega a tomarlo en cuanto el anterior termina.
+
+Se libera al terminar, también ante una excepción o una salida con error. Si el proceso
+muriera de golpe sin llegar a soltarlo, la marca de tiempo deja de moverse y el siguiente
+arranque lo retoma solo.
+
+**Lo que cuesta:** sigue siendo un proceso a la vez. Para varios hace falta estado
+compartido —Redis o equivalente— para cuota, caché, espera y bloqueos. **No habilitar
+múltiples instancias hasta agregarlo.**
 
 ### 4. Sin dependencias externas
 
@@ -434,40 +446,26 @@ del servidor: la consulta vendría de otro origen y CLAMI la rechazaría.
 
 ---
 
-## Límites conocidos
+## Alcance
 
-Lo que este servicio **no** resuelve, dicho antes de que lo descubra alguien en
-producción:
+Lo que este servicio hace y lo que deja a otros, para no esperar de él lo que no
+promete:
 
-- **El candado de instancia única tiene dos riesgos propios.** Si Passenger levanta el
-  proceso nuevo antes de matar el viejo, el nuevo no puede tomar el candado y muere. Y si
-  el proceso muere por `SIGKILL`, el candado queda; al reiniciar, un PID reutilizado por
-  otro proceso del hosting lo haría parecer activo y la aplicación no arrancaría sin
-  intervención manual.
-- **El tráfico sin autenticar no tiene límite propio**, y cada rechazo escribe una línea.
-  Una inundación sostenida engorda el registro del día. El tope de 120 por minuto se
-  aplica después de autenticar, a propósito: antes, cualquiera podía agotarlo sin
-  credenciales y dejar a ManyChat sin servicio.
-- **El desalojo de la caché es por antigüedad, no por uso.** Trescientas búsquedas
-  distintas desalojan el término más consultado aunque siga siendo el más pedido.
-  Degrada el ahorro de cuota, no la corrección.
-- **Un bloqueo administrativo ya activo no deja registro propio.** A partir del cuarto
-  intento solo queda el `request_error`, así que `/dev/logs` subrepresenta la intensidad
-  de un intento sostenido.
-- **El nombre de los registros depende de ICU completo.** La fecha que nombra cada
-  archivo sale de `Intl.DateTimeFormat` con zona horaria. En un Node compilado sin ICU
-  completo el formato cambiaría y la escritura fallaría en silencio. Los binarios
-  oficiales de Node 24 lo traen, pero el arranque no comprueba la suposición.
-- **`/health` no consulta CLAMI.** Responde `200` con el catálogo caído: solo confirma que
-  Node está vivo y configurado.
-- **El tope de productos distintos es una interpretación.** La especificación no dice si
-  un producto devuelto por `/buscar/` cuenta para el límite de 1.500 diarios. El puente
-  toma la lectura estrecha y cuenta solo los pedidos por `/producto/<ref>/`. **Queda por
-  confirmar con CLAMI**; si las búsquedas también cuentan, el tope se consume hasta diez
-  veces más rápido.
-- **Ninguna URL pública es secreta.** La seguridad de las rutas de ManyChat depende de la
-  cabecera, no de que nadie conozca la dirección.
-- **El `ADMIN_STATUS_TOKEN` permite revisar estado, no es una plataforma de monitoreo.**
+- **Atiende un proceso a la vez.** La cuota, la caché y los bloqueos viven en memoria,
+  así que un segundo proceso llevaría cuentas propias y duplicaría el consumo de CLAMI.
+  El arranque lo impide por sí solo. Escalar a varios procesos requiere estado
+  compartido —Redis o equivalente— para cuota, caché, espera y bloqueos.
+- **`/health` responde por la aplicación, no por el catálogo.** Confirma que el proceso
+  está vivo y configurado. Consultar CLAMI en cada chequeo gastaría cuota real cada cinco
+  minutos para no decir nada que el flujo normal no diga antes. El estado del catálogo
+  está en `lastClami`, dentro de `/dev/status`.
+- **El `ADMIN_STATUS_TOKEN` sirve para revisar estado, no reemplaza un monitor externo.**
+  Si el hosting entero cae, nada de lo que vive dentro del hosting puede avisarlo.
+- **El tope de productos distintos sigue una interpretación.** La especificación de CLAMI
+  no dice si un producto devuelto por `/buscar/` cuenta para el límite diario de 1.500.
+  El puente toma la lectura estrecha y cuenta solo los pedidos por `/producto/<ref>/`.
+  **Queda por confirmar con CLAMI**; si las búsquedas también contaran, el tope se
+  consumiría antes.
 
 ---
 

@@ -119,7 +119,7 @@ El comando muestra un valor aleatorio de 32 bytes y no lo guarda en archivos. Co
 5. Error 403 de Apache: confirmar que la entrada es `app.js`, según la guía cPanel.
 6. Error 500 sin línea en logs Node: revisar el `.htaccess` del Document Root del subdominio. Si hereda reglas de WordPress, usar el template `deployment/htaccess-node-root.template` como `.htaccess` solo en esa raíz y volver a probar `/health`.
 7. Módulo no encontrado después de un deploy Git: no ejecutar `npm ci`; revisar Node Selector, `NODE_PATH` y usar el pipeline `scripts/deploy-check.sh`.
-8. La app no inicia y aparece `Ya existe una instancia activa`: comprobar si Passenger intentó levantar más de un proceso. Confirmar con iHosting una instancia para el subdominio; no borrar `data/single-instance.lock` sin confirmar que el PID escrito allí ya no existe.
+8. La app no inicia y aparece `Ya existe una instancia activa`: Passenger está levantando más de un proceso. El arranque espera 30 segundos por si el proceso anterior aún está terminando, así que un mensaje así significa que hay otro corriendo de verdad. Confirmar con el hosting una sola instancia para el subdominio. No hace falta borrar `data/single-instance.lock` a mano: si su dueño desapareció, el siguiente arranque lo retoma solo.
 9. Cuota CLAMI aparentemente inconsistente: confirmar que Passenger ejecuta una sola instancia. Si iHosting obliga varios procesos, no desplegar hasta añadir Redis/estado compartido.
 
 ## Consultar el servicio
