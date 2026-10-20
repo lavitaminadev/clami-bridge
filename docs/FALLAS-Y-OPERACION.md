@@ -54,6 +54,23 @@ Incluyen fecha, ruta, estado, duración, caché y estado CLAMI. No incluyen clav
 
 La aplicación borra automáticamente logs de más de 10 días al iniciar y cada 24 horas. La caché está solo en memoria y vence sola; no se guarda entre reinicios.
 
+## Que version esta corriendo
+
+`GET /dev/status` informa el commit desplegado en el campo `commit`:
+
+```json
+{ "ok": true, "commit": "a37f3800861f7f742729efba9cf1515531945e40", ... }
+```
+
+Se lee del repositorio al cargar el modulo, asi que corresponde al codigo **que
+esta en memoria**, no al que hay en disco. Si despues de un `Update from Remote`
+el valor no cambia, la aplicacion todavia no se reinicio.
+
+Vale `null` cuando la aplicacion se instalo sin el repositorio, por ejemplo
+subiendo un ZIP.
+
+No sale en `/health`, que es publico.
+
 ## Estado privado
 
 Consultar con un cliente que permita cabeceras:

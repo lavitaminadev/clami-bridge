@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { ERROR_CODES, HttpError } = require('./src/error-catalog');
@@ -36,6 +37,32 @@ const ADMIN_LOCK_MS = 40_000;
 const MAX_ADMIN_LOG_ENTRIES = 100;
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
 
+// Que version esta corriendo no se puede deducir desde fuera: entre dos despliegues
+// pueden cambiar solo pruebas o documentacion, y un cambio de comportamiento puede
+// necesitar condiciones que no se provocan a mano. Se lee del repositorio al cargar
+// el modulo, de modo que el valor corresponde al codigo que esta en memoria y no al
+// que hay en disco. Si la aplicacion se subio sin el repositorio, queda en null.
+function deployedCommit() {
+  const git = (...partes) => path.join(__dirname, '.git', ...partes);
+  try {
+    const head = fsSync.readFileSync(git('HEAD'), 'utf8').trim();
+    if (/^[0-9a-f]{40}$/.test(head)) return head;
+    const ref = head.replace(/^ref:\s*/, '');
+    if (!/^refs\/[A-Za-z0-9._/-]+$/.test(ref)) return null;
+    try {
+      return fsSync.readFileSync(git(...ref.split('/')), 'utf8').trim() || null;
+    } catch {
+      // Un clon puede traer las referencias empaquetadas en vez de sueltas.
+      const empaquetadas = fsSync.readFileSync(git('packed-refs'), 'utf8');
+      const linea = empaquetadas.split('\n').find((l) => l.endsWith(' ' + ref));
+      return linea ? linea.split(' ')[0] : null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+const COMMIT = deployedCommit();
 let writeQueue = Promise.resolve();
 let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null, productRefs: [] };
 let distinctProductRefs = new Set();
@@ -312,6 +339,7 @@ function adminStatus() {
   resetDailyStateIfNeeded();
   return {
     ok: isConfigured(),
+    commit: COMMIT,
     uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
     quota: {
       upstreamCallsToday: runtimeState.upstreamCalls,
@@ -557,6 +585,7 @@ module.exports = {
   cacheGet,
   cacheSet,
   acquireSingleInstanceLock,
+  deployedCommit,
   clamiGet,
   loadState,
   adminStatus,

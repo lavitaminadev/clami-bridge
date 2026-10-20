@@ -150,3 +150,16 @@ test('alcanzado el cupo diario de productos se rechaza con su propio codigo', as
 test('el cupo propio queda por debajo del limite que publica CLAMI', () => {
   assert.ok(MAX_DISTINCT_PRODUCTS_PER_DAY < 1500, 'el margen contra el limite de CLAMI desaparecio');
 });
+
+test('la version desplegada se lee del repositorio', () => {
+  const { deployedCommit } = require('../server');
+  const leido = deployedCommit();
+  // Puede ser null si la aplicacion se subio sin el repositorio; lo que no puede
+  // es devolver cualquier cosa.
+  if (leido !== null) assert.match(leido, /^[0-9a-f]{40}$/);
+});
+
+test('/dev/status informa la version', () => {
+  assert.ok(Object.hasOwn(adminStatus(), 'commit'));
+});
+
