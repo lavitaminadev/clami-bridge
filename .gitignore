@@ -34,6 +34,11 @@ test-data/
 *.lock
 !package-lock.json
 
+# cPanel crea public en la raiz al dar de alta la aplicacion Node. No es del
+# proyecto y queda sin rastrear, lo que deja el arbol sucio: con el arbol sucio
+# cPanel se niega a desplegar, sin decir cual es el archivo.
+public/
+
 # Dependencias y cachés
 node_modules
 tmp/
