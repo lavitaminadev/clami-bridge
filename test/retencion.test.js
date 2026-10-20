@@ -18,7 +18,7 @@ process.env.MANYCHAT_SECRET = 'secreto-de-prueba-para-manychat';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  loadState, adminStatus, purgeOldLogs, registerDistinctProduct,
+  loadState, adminStatus, purgeOldLogs, registerDistinctProduct, assertDistinctProductBudget,
   LOG_RETENTION_DAYS, MAX_DISTINCT_PRODUCTS_PER_DAY
 } = require('../server');
 const { ERROR_CODES } = require('../src/error-catalog');
@@ -138,13 +138,13 @@ test('alcanzado el cupo diario de productos se rechaza con su propio codigo', as
   await loadState();
   assert.equal(adminStatus().quota.distinctProductsToday, MAX_DISTINCT_PRODUCTS_PER_DAY);
 
-  assert.throws(() => registerDistinctProduct('zZzZzZzZzZzZzZzZzZzZzZ'), (e) => {
+  assert.throws(() => assertDistinctProductBudget('zZzZzZzZzZzZzZzZzZzZzZ'), (e) => {
     assert.equal(e.errorCode, ERROR_CODES.CLAMI_DISTINCT_PRODUCT_BUDGET);
     return true;
   });
 
   // Uno ya contado sigue pasando: el cupo es de productos distintos, no de consultas.
-  registerDistinctProduct(llenos[0]);
+  assertDistinctProductBudget(llenos[0]);
 });
 
 test('el cupo propio queda por debajo del limite que publica CLAMI', () => {

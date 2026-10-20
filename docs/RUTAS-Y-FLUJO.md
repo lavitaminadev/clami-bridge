@@ -18,7 +18,7 @@
 
 No hay sitio web ni panel visible para clientes. Las URL son alcanzables por Internet porque ManyChat debe llamarlas, pero no funcionan sin la cabecera correcta. No poner secretos como parámetros de URL.
 
-Las rutas `/dev/*` no muestran términos buscados, códigos de barra, cabeceras, tokens, IPs de clientes ni cuerpos JSON. Tras tres intentos fallidos desde la misma conexión de red, bloquean nuevos intentos durante 40 segundos. Ese bloqueo es una defensa adicional; el token sigue siendo el control principal.
+Las rutas `/dev/*` no muestran términos buscados, códigos de barra, cabeceras, tokens, IPs de clientes ni cuerpos JSON. Tras tres intentos fallidos del mismo valor incorrecto, ese valor queda bloqueado 40 segundos. No se agrupa por dirección, que detrás de Passenger es siempre la del proxy interno: así un bot probando valores no deja fuera al token real. Un atacante que cambie el token en cada intento nunca acumula tres fallos. Ese bloqueo es una defensa adicional; el token sigue siendo el control principal.
 
 Los logs pertenecen exclusivamente a esta aplicación y se conservan durante 10 días. La caché no se conserva diez días: vence en segundos para no entregar precio o stock antiguo.
 

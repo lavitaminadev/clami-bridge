@@ -104,3 +104,23 @@ test('la marca de origen y el commit sobreviven a la sanitizacion', () => {
   assert.equal(salida.source, 'deadbeef');
   assert.equal(Object.hasOwn(salida, 'ip'), false);
 });
+
+test('un campo fuera de la lista blanca no llega al disco', async () => {
+  // La garantia escrita es que no se escribe, no que no se muestre: filtrar solo al
+  // leer dejaba el dato en el archivo para siempre.
+  const os = require('node:os'); const path = require('node:path'); const fsr = require('node:fs');
+  const dir = fsr.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+  process.env.LOG_DIR = dir;
+  delete require.cache[require.resolve('../server')];
+  const { audit } = require('../server');
+
+  await audit('prueba', { route: '/x', q: 'paracetamol', ref: 'a'.repeat(22), authorization: 'Bearer secreto' });
+
+  const archivo = fsr.readdirSync(dir).find((n) => n.startsWith('bridge-'));
+  const escrito = fsr.readFileSync(path.join(dir, archivo), 'utf8');
+  assert.match(escrito, /"route":"\/x"/);
+  for (const prohibido of ['paracetamol', 'aaaaaaaaaaaaaaaaaaaaaa', 'secreto', 'authorization']) {
+    assert.equal(escrito.includes(prohibido), false, `se escribio ${prohibido} en el archivo`);
+  }
+  fsr.rmSync(dir, { recursive: true, force: true });
+});

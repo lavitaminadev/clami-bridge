@@ -247,3 +247,51 @@ test('un rechazo administrativo deja un registro cruzable con la peticion', () =
     assert.ok(Object.hasOwn(entrada, campo), `falta ${campo}`);
   }
 });
+
+test('/manychat/producto devuelve texto y el ref consultado', async () => {
+  upstream(PRODUCTO);
+  const r = await pedir({ method: 'POST', url: '/manychat/producto', headers: conSecreto, body: `{"ref":"${PRODUCTO.ref}"}` });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.ref, PRODUCTO.ref);
+  assert.match(r.body.texto, /PARACETAMOL — \$600/);
+});
+
+test('/manychat/producto sirve de cache sin volver a consultar', async () => {
+  // El TTL de producto es de 20 s: la segunda llamada no debe salir a CLAMI.
+  upstream(PRODUCTO);
+  await pedir({ method: 'POST', url: '/manychat/producto', headers: conSecreto, body: `{"ref":"${PRODUCTO.ref}"}` });
+  let salio = false;
+  globalThis.fetch = async () => { salio = true; throw new Error('no deberia salir'); };
+  const r = await pedir({ method: 'POST', url: '/manychat/producto', headers: conSecreto, body: `{"ref":"${PRODUCTO.ref}"}` });
+  assert.equal(r.status, 200);
+  assert.equal(salio, false, 'se consulto CLAMI teniendo el producto en cache');
+});
+
+test('/manychat/producto rechaza un producto que CLAMI devuelve a medias', async () => {
+  upstream({ ref: 'QQQQQQQQQQQQQQQQQQQQQQ', nombre: 'X' });
+  const r = await pedir({ method: 'POST', url: '/manychat/producto', headers: conSecreto, body: '{"ref":"QQQQQQQQQQQQQQQQQQQQQQ"}' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.codigo, ERROR_CODES.CLAMI_RESPONSE_INVALID);
+});
+
+test('una busqueda por codigo de barras no deja nada en cache', async () => {
+  // La promesa escrita es que no se cachea: sin esta prueba un refactor la rompe
+  // con todo en verde.
+  upstream({ consulta: null, resultados: [PRODUCTO] });
+  await pedir({ method: 'POST', url: '/manychat/buscar', headers: conSecreto, body: '{"q":"7801234567890"}' });
+  let salio = false;
+  globalThis.fetch = async () => { salio = true; return { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ resultados: [PRODUCTO] }) }; };
+  await pedir({ method: 'POST', url: '/manychat/buscar', headers: conSecreto, body: '{"q":"7801234567890"}' });
+  assert.equal(salio, true, 'el codigo de barras quedo cacheado');
+});
+
+test('una busqueda malformada no envenena la cache', async () => {
+  upstream({ resultados: [{ ref: 'incompleto' }] });
+  const primera = await pedir({ method: 'POST', url: '/manychat/buscar', headers: conSecreto, body: '{"q":"termino-envenenado"}' });
+  assert.equal(primera.body.codigo, ERROR_CODES.CLAMI_RESPONSE_INVALID);
+  // Si se hubiera cacheado la respuesta cruda, esta seguiria fallando 45 s.
+  upstream({ resultados: [PRODUCTO] });
+  const segunda = await pedir({ method: 'POST', url: '/manychat/buscar', headers: conSecreto, body: '{"q":"termino-envenenado"}' });
+  assert.equal(segunda.body.ok, true);
+});

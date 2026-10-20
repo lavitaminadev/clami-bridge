@@ -1,4 +1,8 @@
 ---
+# Copia de referencia de .cpanel.yml, que ya viene versionado y listo para usar.
+# Si se copia este archivo encima del real, el despliegue pierde la instalacion de
+# la tarea de salud: ajustar la URL del segundo paso antes de reemplazar nada.
 deployment:
   tasks:
-    - export APP_ROOT="$PWD" && /bin/bash "$APP_ROOT/scripts/deploy-check.sh" "$APP_ROOT"
+    - /bin/bash scripts/deploy-check.sh
+    - "/bin/bash scripts/setup-crontab.sh https://catalogo.ejemplo.cl/health || echo CRON-FALLO-revisalo-con-scripts-setup-crontab-sh"

@@ -43,8 +43,14 @@ linea="*/5 * * * * /bin/bash $app_root/scripts/cpanel-healthcheck.sh $health_url
 # `crontab -l` termina en error cuando la cuenta todavia no tiene crontab: eso no es
 # una falla, es el primer despliegue.
 actual="$(crontab -l 2>/dev/null || true)"
-nuevo="$(printf '%s\n' "$actual" | grep -v -F "$marker" || true)"
-nuevo="$(printf '%s\n%s\n' "$nuevo" "$linea" | sed '/^$/d')"
+# Se quitan solo las lineas propias. Antes se borraban tambien las lineas en
+# blanco del crontab entero, que son separadores de quien lo escribio.
+sin_propias="$(printf '%s\n' "$actual" | grep -v -F "$marker" || true)"
+if [ -z "$actual" ]; then
+  nuevo="$linea"
+else
+  nuevo="$(printf '%s\n%s' "$sin_propias" "$linea")"
+fi
 
 if [ "$actual" = "$nuevo" ]; then
   echo "CRON: la tarea de salud ya estaba instalada y sin cambios."

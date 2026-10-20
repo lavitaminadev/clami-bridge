@@ -125,6 +125,7 @@ es secreta**: la seguridad está en las cabeceras, no en que nadie conozca la di
 | Bloqueo tras `429` | Respeta `Retry-After`, tope de 1 hora | — | La especificación pide no reintentar en bucle |
 | Caché de búsqueda | 45 segundos | — | Varias personas preguntan lo mismo seguido; el precio no cambia en ese lapso |
 | Caché de producto | 20 segundos | — | Más corta: es el dato que el cliente va a usar para decidir |
+| Peticiones por minuto al puente | 120 | — | Techo propio, común a las dos rutas de ManyChat. Se aplica **después** de autenticar, para que nadie sin credenciales pueda agotarlo |
 
 ### Privacidad
 
@@ -134,7 +135,7 @@ es secreta**: la seguridad está en las cabeceras, no en que nadie conozca la di
 | Los códigos de barra no se registran | Identifican lo que una persona concreta consultó |
 | Los registros pasan por una lista blanca de campos | Lo que no está en la lista no se escribe, aunque alguien lo agregue al evento por error |
 | Retención de 10 días | Suficiente para diagnosticar, no para acumular |
-| El estado persistido guarda solo contadores | Ni conversaciones, ni consultas, ni datos del cliente |
+| El estado persistido guarda contadores y los `ref` consultados hoy | Para no gastar dos veces el cupo por el mismo producto. Son identificadores de catálogo: ni conversaciones, ni términos buscados, ni códigos de barra, ni datos del cliente |
 
 ### Operación
 
@@ -304,8 +305,8 @@ Con `.cpanel.yml` versionado, el botón **Deploy** de cPanel queda disponible y 
 despliegue:
 
 1. Aborta si la aplicación quedó dentro de `public_html`.
-2. Comprueba que estén `app.js`, `server.js` y `package.json`.
-3. Cuenta los archivos del proyecto, antes y después, contra el tope de inodos.
+2. Comprueba que estén `app.js`, `server.js`, `package.json` y `scripts/check-project-files.sh`.
+3. Cuenta los archivos del proyecto contra el tope de inodos.
 4. Aborta si aparecieron dependencias, antes de tocar el enlace `node_modules`.
 5. Toca `tmp/restart.txt`, de modo que el código nuevo queda corriendo sin pasar por
    Setup Node.js App.
@@ -317,8 +318,13 @@ despliegue:
 solamente sus propias líneas, reconocidas por un marcador, y conserva las demás; correrlo
 sin cambios deja el crontab igual.
 
-Lee la URL de `~/.clami-bridge-health-url`, no del repositorio, que es público. Crear una
-sola vez en el servidor:
+La URL va en `.cpanel.yml`, de modo que el despliegue no depende de ningún paso
+manual. El dominio es público desde que AutoSSL emitió el certificado y quedó en los
+registros de Certificate Transparency; el usuario de la cuenta, que sí es media
+credencial, no aparece en ninguna parte del repositorio.
+
+Quien prefiera no tenerlo ahí puede quitar la URL de esa línea y dejarla en
+`~/.clami-bridge-health-url`, que el script sigue aceptando:
 
 ```bash
 echo "https://catalogo.ejemplo.cl/health" > ~/.clami-bridge-health-url
@@ -439,7 +445,19 @@ producción:
   otro proceso del hosting lo haría parecer activo y la aplicación no arrancaría sin
   intervención manual.
 - **El tráfico sin autenticar no tiene límite propio**, y cada rechazo escribe una línea.
-  Una inundación sostenida engorda el registro del día.
+  Una inundación sostenida engorda el registro del día. El tope de 120 por minuto se
+  aplica después de autenticar, a propósito: antes, cualquiera podía agotarlo sin
+  credenciales y dejar a ManyChat sin servicio.
+- **El desalojo de la caché es por antigüedad, no por uso.** Trescientas búsquedas
+  distintas desalojan el término más consultado aunque siga siendo el más pedido.
+  Degrada el ahorro de cuota, no la corrección.
+- **Un bloqueo administrativo ya activo no deja registro propio.** A partir del cuarto
+  intento solo queda el `request_error`, así que `/dev/logs` subrepresenta la intensidad
+  de un intento sostenido.
+- **El nombre de los registros depende de ICU completo.** La fecha que nombra cada
+  archivo sale de `Intl.DateTimeFormat` con zona horaria. En un Node compilado sin ICU
+  completo el formato cambiaría y la escritura fallaría en silencio. Los binarios
+  oficiales de Node 24 lo traen, pero el arranque no comprueba la suposición.
 - **`/health` no consulta CLAMI.** Responde `200` con el catálogo caído: solo confirma que
   Node está vivo y configurado.
 - **El tope de productos distintos es una interpretación.** La especificación no dice si

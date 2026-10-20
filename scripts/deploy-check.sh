@@ -30,8 +30,6 @@ if grep -q '"dependencies"[[:space:]]*:' "$app_root/package.json" || grep -q '"o
   exit 1
 fi
 
-/bin/bash "$app_root/scripts/check-project-files.sh" "$app_root"
-
 mkdir -p "$app_root/tmp"
 touch "$app_root/tmp/restart.txt"
 echo "OK: controles de despliegue terminados. Verificar /health antes de instalar cron."

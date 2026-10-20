@@ -78,11 +78,14 @@ function sourceTag(request) {
   return crypto.createHash('sha256').update(SOURCE_SALT).update(origen).digest('hex').slice(0, 8);
 }
 let writeQueue = Promise.resolve();
-let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null, productRefs: [] };
+let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null, productRefs: [], minuteCounters: [] };
 let distinctProductRefs = new Set();
 const cache = new Map();
 let requestWindow = { start: Date.now(), count: 0 };
 const adminFailures = new Map();
+// Se persiste junto al resto del estado: vive en memoria para no escribir en cada
+// peticion, pero sobrevive a un reinicio. Sin esto, Passenger levantando la
+// aplicacion varias veces por minuto anulaba el tope de 55.
 const upstreamMinuteCounters = new Map();
 const startedAt = Date.now();
 let instanceLockHeld = false;
@@ -111,7 +114,10 @@ function logFileName() {
 }
 
 function audit(event, fields = {}) {
-  const entry = JSON.stringify({ ts: new Date().toISOString(), event, ...fields }) + '\n';
+  // Se filtra al escribir, no solo al leer: un campo agregado por error en una
+  // llamada futura no debe llegar nunca al disco, porque desde ahi ya no hay
+  // vuelta atras. /dev/logs vuelve a filtrar por si el archivo trae algo viejo.
+  const entry = JSON.stringify(sanitizeAuditEntry({ ts: new Date().toISOString(), event, ...fields })) + '\n';
   writeQueue = writeQueue
     .then(() => fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 }))
     .then(() => fs.appendFile(path.join(LOG_DIR, logFileName()), entry, { encoding: 'utf8', mode: 0o600 }))
@@ -140,12 +146,17 @@ async function loadState() {
   } catch { /* First boot or unusable state: use secure defaults. */ }
   resetDailyStateIfNeeded();
   distinctProductRefs = new Set(Array.isArray(runtimeState.productRefs) ? runtimeState.productRefs : []);
+  upstreamMinuteCounters.clear();
+  for (const [minuto, cuenta] of Array.isArray(runtimeState.minuteCounters) ? runtimeState.minuteCounters : []) {
+    if (Number.isInteger(minuto) && Number.isInteger(cuenta)) upstreamMinuteCounters.set(minuto, cuenta);
+  }
 }
 
 function resetDailyStateIfNeeded() {
   if (runtimeState.date !== currentDate()) {
-    runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: runtimeState.lastClami || null, productRefs: [] };
+    runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: runtimeState.lastClami || null, productRefs: [], minuteCounters: [] };
     distinctProductRefs = new Set();
+    upstreamMinuteCounters.clear();
   }
 }
 
@@ -246,6 +257,7 @@ async function clamiGet(relativePath) {
   const count = upstreamMinuteCounters.get(minuteKey) || 0;
   if (count >= MAX_UPSTREAM_PER_MINUTE) throw new HttpError(503, 'El catálogo está temporalmente ocupado. Intenta nuevamente en un minuto.', { reason: 'minute_budget' });
   upstreamMinuteCounters.set(minuteKey, count + 1);
+  runtimeState.minuteCounters = [...upstreamMinuteCounters];
   runtimeState.upstreamCalls += 1;
   void persistState();
 
@@ -416,12 +428,18 @@ async function recentAuditEntries(limit, date) {
 // los que llegan a pedirse por `/producto/<ref>/`: un acierto de cache no consulta nada.
 // Que una busqueda devuelva un producto cuente o no para ese tope no esta dicho en la
 // especificacion; se toma la lectura estrecha y queda por confirmar con CLAMI.
-function registerDistinctProduct(ref) {
+function assertDistinctProductBudget(ref) {
   resetDailyStateIfNeeded();
   if (distinctProductRefs.has(ref)) return;
   if (distinctProductRefs.size >= MAX_DISTINCT_PRODUCTS_PER_DAY) {
     throw new HttpError(503, "El catálogo alcanzó el límite interno diario. Intenta mañana.", { reason: "distinct_product_budget" });
   }
+}
+
+// Se registra despues de que el catalogo respondio. Contarlo antes hacia que un
+// timeout o un error de red gastaran un cupo que CLAMI nunca llego a usar.
+function registerDistinctProduct(ref) {
+  if (distinctProductRefs.has(ref)) return;
   distinctProductRefs.add(ref);
   runtimeState.productRefs = [...distinctProductRefs];
   void persistState();
@@ -430,13 +448,14 @@ function registerDistinctProduct(ref) {
 async function handleSearch(body) {
   const { q, channel, isBarcode } = validateSearchBody(body);
   const cacheKey = `search:${q.toLocaleLowerCase('es-CL')}`;
-  let result = isBarcode ? null : cacheGet(cacheKey);
-  const cacheHit = Boolean(result);
-  if (!result) {
-    result = await clamiGet(`/buscar/?q=${encodeURIComponent(q)}`);
-    if (!isBarcode) cacheSet(cacheKey, result, SEARCH_CACHE_TTL_MS);
+  let results = isBarcode ? null : cacheGet(cacheKey);
+  const cacheHit = Boolean(results);
+  if (!results) {
+    // Validar antes de cachear: guardar la respuesta cruda hacia que una
+    // malformada se sirviera durante todo el TTL sin volver a consultar.
+    results = requireSearchResults(await clamiGet(`/buscar/?q=${encodeURIComponent(q)}`));
+    if (!isBarcode) cacheSet(cacheKey, results, SEARCH_CACHE_TTL_MS);
   }
-  const results = requireSearchResults(result);
   if (!results.length) return { payload: { ok: true, texto: 'No encontré productos para esa búsqueda.', opciones: [] }, cacheHit, queryType: isBarcode ? 'barcode' : 'text' };
   const options = results.map((product, index) => ({ numero: index + 1, ref: product.ref, texto: productText(product) }));
   const texto = options.length === 1 ? options[0].texto : `Encontré ${options.length} opciones. Responde con el número que corresponde.`;
@@ -449,8 +468,9 @@ async function handleProduct(body) {
   let product = cacheGet(cacheKey);
   const cacheHit = Boolean(product);
   if (!product) {
-    registerDistinctProduct(ref);
+    assertDistinctProductBudget(ref);
     product = requireProduct(await clamiGet(`/producto/${encodeURIComponent(ref)}/`));
+    registerDistinctProduct(ref);
     cacheSet(cacheKey, product, PRODUCT_CACHE_TTL_MS);
   }
   return { payload: { ok: true, texto: productText(product), ref: product.ref }, cacheHit };
@@ -512,8 +532,8 @@ async function requestHandler(request, response) {
       const rawLimit = query.get('limit');
       const date = query.get('date');
       const limit = rawLimit === null ? 50 : Number.parseInt(rawLimit, 10);
-      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ADMIN_LOG_ENTRIES) throw new HttpError(400, 'Parámetro inválido.');
-      if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'Parámetro inválido.');
+      if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ADMIN_LOG_ENTRIES) throw new HttpError(400, 'Parámetro inválido.', {}, ERROR_CODES.ADMIN_LOG_QUERY_INVALID);
+      if (date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'Parámetro inválido.', {}, ERROR_CODES.ADMIN_LOG_QUERY_INVALID);
       const entries = await recentAuditEntries(limit, date);
       respond(response, 200, { entries });
       await audit('admin_logs', { ...baseLog, status: 200, durationMs: Date.now() - startedAt });
@@ -559,6 +579,12 @@ async function start() {
   logCleanupTimer.unref();
   // Por debajo del corte de ManyChat: una petición que siguiera abierta más allá de
   // esos 10 s ya no tiene a quién responder.
+  // Sin estas dos guardas, un fallo imprevisto mata el proceso; al reiniciar entra
+  // en juego el riesgo del candado y el servicio puede quedar caido. Se registra y
+  // se sigue sirviendo: un worker vivo con un error anotado vale mas que uno muerto.
+  process.on('unhandledRejection', (error) => { void audit('unhandled_rejection', { reason: safeError(error) }); });
+  process.on('uncaughtException', (error) => { void audit('uncaught_exception', { reason: safeError(error) }); });
+
   const server = http.createServer({ requestTimeout: MANYCHAT_REQUEST_TIMEOUT_MS - 1_000, headersTimeout: 5_000 }, requestHandler);
   server.keepAliveTimeout = 5_000;
   server.on('clientError', () => undefined);
@@ -596,6 +622,8 @@ module.exports = {
   constantTimeMatch,
   responseStatusFor,
   sanitizeAuditEntry,
+  audit,
+  persistState,
   cacheGet,
   cacheSet,
   acquireSingleInstanceLock,
@@ -606,6 +634,7 @@ module.exports = {
   adminStatus,
   purgeOldLogs,
   registerDistinctProduct,
+  assertDistinctProductBudget,
   LOG_RETENTION_DAYS,
   MAX_DISTINCT_PRODUCTS_PER_DAY,
   requestHandler,

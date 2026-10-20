@@ -49,10 +49,15 @@ ManyChat o el cliente reciben solo mensajes seguros en español:
 |---|---:|---|
 | Secreto ManyChat inválido | `401` | `No autorizado.` |
 | Solicitud JSON inválida | `400` / `413` / `415` | Indica el problema sin exponer datos internos. |
-| Límite local temporal | `429` | `Demasiadas solicitudes.` y `Retry-After`. |
-| CLAMI ocupado (`429`) | `503` | Catálogo temporalmente ocupado y `Retry-After`. |
-| CLAMI credencial/IP no autorizada | `503` | Catálogo no disponible temporalmente. El motivo real queda solo en log privado. |
-| Timeout o red CLAMI | `504` / `502` | Catálogo tardó demasiado / no fue posible consultar. |
+| Límite local temporal | `200` | `Demasiadas solicitudes.` con `codigo: LOCAL_RATE_LIMIT`. |
+| CLAMI ocupado (`429`) | `200` | Catálogo temporalmente ocupado, `codigo: CLAMI_RATE_LIMITED`. |
+| CLAMI credencial/IP no autorizada | `200` | Catálogo no disponible temporalmente, `codigo: CLAMI_CREDENTIAL_OR_ORIGIN`. El motivo real queda solo en el registro privado. |
+| Timeout o red CLAMI | `200` | `codigo: CLAMI_TIMEOUT` o `CLAMI_NETWORK_ERROR`. |
+
+**Las rutas de ManyChat devuelven `200` ante un fallo de operación** porque ManyChat
+descarta el cuerpo de cualquier otra respuesta y el aviso no llegaría al cliente. El
+estado real va en `codigo`. Un error de configuración —secreto, `Content-Type`, ruta—
+conserva su código real. El detalle está en `docs/FALLAS-Y-OPERACION.md`.
 | CLAMI devuelve datos incompletos | `502` | Catálogo devolvió datos incompletos. |
 | Sin coincidencias | `200` | `No encontré productos para esa búsqueda.` |
 
