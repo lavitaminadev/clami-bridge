@@ -543,4 +543,20 @@ if (require.main === module) start().catch(async (error) => {
   process.exit(1);
 });
 
-module.exports = { start, validateSearchBody, validateProductBody, productText, constantTimeMatch, responseStatusFor };
+// Se exportan tambien las piezas internas que sostienen garantias comprobables:
+// la lista blanca de los registros, el vencimiento y desalojo de la cache, y el
+// candado de proceso. Sin exportarlas no hay forma de fijarlas con un test.
+module.exports = {
+  start,
+  validateSearchBody,
+  validateProductBody,
+  productText,
+  constantTimeMatch,
+  responseStatusFor,
+  sanitizeAuditEntry,
+  cacheGet,
+  cacheSet,
+  acquireSingleInstanceLock,
+  releaseSingleInstanceLock,
+  MAX_CACHE_ENTRIES
+};
