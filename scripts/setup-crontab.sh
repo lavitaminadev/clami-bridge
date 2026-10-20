@@ -6,18 +6,21 @@ set -euo pipefail
 # Reemplaza solamente sus propias lineas, reconocidas por el marcador, y conserva
 # intactas las demas. Correrlo cuando no hubo cambios deja el crontab igual.
 #
-# Uso:  setup-crontab.sh <raiz-de-la-app> [url-de-salud]
+# Uso:  setup-crontab.sh [url-de-salud]
 #
-# La URL llega como segundo argumento desde .cpanel.yml. Si no viene, se lee de
+# La raiz de la aplicacion se deduce de la ubicacion de este archivo, no del
+# directorio de trabajo: la linea del crontab necesita una ruta absoluta.
+#
+# La URL llega como argumento desde .cpanel.yml. Si no viene, se lee de
 # ~/.clami-bridge-health-url, para quien prefiera no tener su dominio en un
 # repositorio publico. Sin ninguna de las dos no se instala nada y se dice, sin
 # detener el despliegue.
 
-app_root="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+app_root="$(cd "$(dirname "$0")/.." && pwd)"
 url_file="${CLAMI_BRIDGE_HEALTH_URL_FILE:-$HOME/.clami-bridge-health-url}"
 marker="# clami-bridge:salud"
 
-health_url="${2:-}"
+health_url="${1:-}"
 if [ -z "$health_url" ]; then
   if [ ! -f "$url_file" ]; then
     echo "CRON: no se indico la URL de salud ni existe $url_file; no se instala la tarea."
