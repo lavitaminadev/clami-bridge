@@ -1,0 +1,68 @@
+# Secretos y configuración con credenciales.
+# `.env` cubre el archivo exacto; `.env.*` cubre las variantes que aparecen en
+# la práctica (.env.produccion, .env.local, .env.bak) y que de otro modo se
+# versionarían sin que nadie lo note. La plantilla sí se publica.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa*
+id_ed25519*
+.npmrc
+.netrc
+*credential*
+*credencial*
+*secret*
+*secreto*
+ACCESOS*
+CLAVES*
+*cookies*
+
+# Configuración real de despliegue: lleva rutas del servidor y del hosting.
+# El repositorio publica solo la plantilla.
+.cpanel.yml
+
+# Estado en ejecución y registros. Reflejan operación real y crecen sin límite.
+logs/
+data/
+test-logs/
+test-data/
+*.jsonl
+*.log
+*.lock
+!package-lock.json
+
+# Dependencias y cachés
+node_modules/
+tmp/
+.npm/
+.cache/
+
+# Respaldos y comprimidos
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.bak
+*.backup
+*.old
+*.orig
+*.dump
+*.sql
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.lnk
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*~

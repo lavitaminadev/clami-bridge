@@ -1,0 +1,15 @@
+{
+  "name": "clami-manychat-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Puente seguro entre ManyChat y el catálogo CLAMI.",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:local": "node --env-file=.env server.js",
+    "generate:admin-token": "node scripts/generate-admin-token.js",
+    "test": "node --test"
+  }
+}

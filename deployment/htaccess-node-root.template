@@ -1,0 +1,5 @@
+# Poner este archivo como .htaccess SOLO en el Document Root del subdominio Node.
+# No copiarlo a public_html de WordPress.
+<IfModule mod_rewrite.c>
+    RewriteEngine Off
+</IfModule>
