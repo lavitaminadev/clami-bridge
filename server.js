@@ -63,6 +63,20 @@ function deployedCommit() {
 }
 
 const COMMIT = deployedCommit();
+
+// Los registros no guardan direcciones. Para poder responder "esto fue una fuente
+// repitiendo o muchas distintas" se escribe una marca derivada de la direccion con
+// una sal aleatoria que nace con el proceso y nunca se persiste: dentro de una misma
+// vida del proceso dos peticiones de la misma fuente comparten marca, y al reiniciar
+// la correspondencia se pierde para siempre.
+const SOURCE_SALT = crypto.randomBytes(16);
+
+function sourceTag(request) {
+  const reenviado = request.headers['x-forwarded-for'];
+  const origen = String((typeof reenviado === 'string' ? reenviado.split(',')[0] : '') || request.socket.remoteAddress || '').trim();
+  if (!origen) return null;
+  return crypto.createHash('sha256').update(SOURCE_SALT).update(origen).digest('hex').slice(0, 8);
+}
 let writeQueue = Promise.resolve();
 let runtimeState = { date: currentDate(), upstreamCalls: 0, cooldownUntil: 0, lastClami: null, productRefs: [] };
 let distinctProductRefs = new Set();
@@ -306,7 +320,7 @@ function ensureManyChat(request) {
   }
 }
 
-function ensureAdmin(request) {
+function ensureAdmin(request, baseLog = {}) {
   const header = typeof request.headers.authorization === 'string' ? request.headers.authorization : '';
   const expected = process.env.ADMIN_STATUS_TOKEN;
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -322,7 +336,7 @@ function ensureAdmin(request) {
   const attempts = (failure?.attempts || 0) + 1;
   const lockedUntil = attempts >= ADMIN_MAX_FAILURES ? now + ADMIN_LOCK_MS : 0;
   adminFailures.set(fingerprint, { attempts: lockedUntil ? 0 : attempts, lockedUntil, updatedAt: now });
-  void audit('admin_auth_failed', { route: new URL(request.url, 'http://localhost').pathname, reason: lockedUntil ? 'admin_locked' : 'invalid_admin_token' });
+  void audit('admin_auth_failed', { ...baseLog, status: lockedUntil ? 429 : 401, reason: lockedUntil ? 'admin_locked' : 'invalid_admin_token' });
   throw new HttpError(lockedUntil ? 429 : 401, 'No autorizado.', lockedUntil
     ? { reason: 'admin_locked', retryAfter: Math.ceil(ADMIN_LOCK_MS / 1000) }
     : { reason: 'invalid_admin_token' });
@@ -355,7 +369,7 @@ function adminStatus() {
 }
 
 function sanitizeAuditEntry(entry) {
-  const allowed = ['ts', 'event', 'requestId', 'route', 'method', 'status', 'durationMs', 'cacheHit', 'queryType', 'errorCode', 'reason', 'clamiStatus', 'retentionDays'];
+  const allowed = ['ts', 'event', 'requestId', 'route', 'method', 'status', 'durationMs', 'cacheHit', 'queryType', 'errorCode', 'reason', 'clamiStatus', 'retentionDays', 'commit', 'source'];
   const output = {};
   for (const key of allowed) if (Object.hasOwn(entry, key)) output[key] = entry[key];
   return output;
@@ -478,7 +492,7 @@ async function requestHandler(request, response) {
   const startedAt = Date.now();
   const requestId = crypto.randomUUID();
   const route = new URL(request.url, 'http://localhost').pathname;
-  const baseLog = { requestId, route, method: request.method };
+  const baseLog = { requestId, route, method: request.method, source: sourceTag(request) };
   try {
     if (route === '/health' && request.method === 'GET') {
       const status = isConfigured() ? 200 : 503;
@@ -487,13 +501,13 @@ async function requestHandler(request, response) {
       return;
     }
     if (route === '/dev/status' && request.method === 'GET') {
-      ensureAdmin(request);
+      ensureAdmin(request, baseLog);
       respond(response, 200, adminStatus());
       await audit('admin_status', { ...baseLog, status: 200, durationMs: Date.now() - startedAt });
       return;
     }
     if (route === '/dev/logs' && request.method === 'GET') {
-      ensureAdmin(request);
+      ensureAdmin(request, baseLog);
       const query = new URL(request.url, 'http://localhost').searchParams;
       const rawLimit = query.get('limit');
       const date = query.get('date');
@@ -557,7 +571,7 @@ async function start() {
     await releaseSingleInstanceLock();
     throw error;
   }
-  void audit('server_started', { port: PORT, configured: isConfigured() });
+  void audit('server_started', { port: PORT, configured: isConfigured(), commit: COMMIT });
   const shutdown = () => server.close(() => {
     void releaseSingleInstanceLock().finally(() => process.exit(0));
   });
@@ -586,6 +600,7 @@ module.exports = {
   cacheSet,
   acquireSingleInstanceLock,
   deployedCommit,
+  sourceTag,
   clamiGet,
   loadState,
   adminStatus,

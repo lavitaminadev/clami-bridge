@@ -233,3 +233,17 @@ test('toda respuesta trae requestId para poder rastrearla', async () => {
   const r = await pedir({ method: 'POST', url: '/manychat/buscar', headers: json, body: '{"q":"x"}' });
   assert.match(r.body.requestId, /^[0-9a-f-]{36}$/);
 });
+
+test('un rechazo administrativo deja un registro cruzable con la peticion', () => {
+  // Antes se registraba solo la ruta y el motivo: no habia requestId ni estado con
+  // que cruzarlo contra el request_error de esa misma peticion.
+  const { sanitizeAuditEntry } = require('../server');
+  const entrada = sanitizeAuditEntry({
+    ts: '2026-10-20T20:01:12.747Z', event: 'admin_auth_failed',
+    requestId: 'c1caccf9-f4bb-4665-8b31-a59276df418c', route: '/dev/status',
+    method: 'GET', status: 401, source: 'deadbeef', reason: 'invalid_admin_token'
+  });
+  for (const campo of ['requestId', 'route', 'method', 'status', 'source', 'reason']) {
+    assert.ok(Object.hasOwn(entrada, campo), `falta ${campo}`);
+  }
+});

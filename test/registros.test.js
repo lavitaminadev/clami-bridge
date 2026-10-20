@@ -62,3 +62,45 @@ test('un campo permitido con valor nulo o falso se conserva', () => {
 test('una entrada vacia no inventa campos', () => {
   assert.deepEqual(sanitizeAuditEntry({}), {});
 });
+
+const { sourceTag } = require('../server');
+
+function pet(headers = {}, remoteAddress = '203.0.113.9') {
+  return { headers, socket: { remoteAddress } };
+}
+
+test('la marca de origen agrupa la misma fuente y separa fuentes distintas', () => {
+  // Permite responder "fue uno repitiendo o fueron muchos" sin guardar la direccion.
+  const a = sourceTag(pet({}, '203.0.113.9'));
+  const b = sourceTag(pet({}, '203.0.113.9'));
+  const c = sourceTag(pet({}, '198.51.100.4'));
+  assert.equal(a, b);
+  assert.notEqual(a, c);
+});
+
+test('la marca no permite recuperar la direccion', () => {
+  const marca = sourceTag(pet({}, '203.0.113.9'));
+  assert.match(marca, /^[0-9a-f]{8}$/);
+  assert.equal(marca.includes('203'), false);
+  assert.equal(marca.includes('113'), false);
+});
+
+test('se usa el primer salto de X-Forwarded-For, no la direccion del proxy', () => {
+  // Detras de Passenger la direccion del socket es siempre la del proxy interno:
+  // sin esto todas las peticiones compartirian marca y el dato no diria nada.
+  const cliente = sourceTag(pet({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }, '127.0.0.1'));
+  const directo = sourceTag(pet({}, '203.0.113.9'));
+  assert.equal(cliente, directo);
+});
+
+test('sin origen conocido la marca es nula, no una cadena inventada', () => {
+  assert.equal(sourceTag(pet({}, '')), null);
+  assert.equal(sourceTag(pet({ 'x-forwarded-for': '   ' }, '')), null);
+});
+
+test('la marca de origen y el commit sobreviven a la sanitizacion', () => {
+  const salida = sanitizeAuditEntry({ event: 'server_started', commit: 'a'.repeat(40), source: 'deadbeef', ip: '203.0.113.9' });
+  assert.equal(salida.commit, 'a'.repeat(40));
+  assert.equal(salida.source, 'deadbeef');
+  assert.equal(Object.hasOwn(salida, 'ip'), false);
+});

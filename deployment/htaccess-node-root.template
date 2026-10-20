@@ -1,5 +1,26 @@
 # Poner este archivo como .htaccess SOLO en el Document Root del subdominio Node.
 # No copiarlo a public_html de WordPress.
+#
+# CloudLinux regenera ese .htaccess si alguien vuelve a crear el subdominio y se
+# lleva por delante lo que haya aqui. Si la API empieza a devolver 500 sin dejar
+# linea en passenger-error.log, o vuelve a aparecer la cabecera de version,
+# comprobar primero que estos bloques sigan puestos.
+#
+# Los dos van envueltos en <IfModule> a proposito: si el modulo no estuviera
+# cargado, una directiva suelta hace que Apache rechace el archivo entero y
+# devuelva 500, que es peor que el problema que vienen a resolver.
+
+# El subdominio sirve la API por Passenger, no WordPress. Sin esta linea hereda
+# las reglas de reescritura del public_html padre y toda peticion sin archivo
+# real termina reescrita a /index.php: la API responde 500 sin una sola linea en
+# passenger-error.log, porque el error es de Apache y no de la aplicacion.
 <IfModule mod_rewrite.c>
     RewriteEngine Off
+</IfModule>
+
+# Passenger anuncia su version en cada respuesta: `X-Powered-By: Phusion
+# Passenger(R) 6.2.0`. No abre ninguna puerta por si sola, pero le ahorra a un
+# escaneo automatizado averiguar que version corre y que fallos conocidos probar.
+<IfModule mod_headers.c>
+    Header always unset X-Powered-By
 </IfModule>
