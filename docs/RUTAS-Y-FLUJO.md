@@ -25,7 +25,7 @@ Los logs pertenecen exclusivamente a esta aplicación y se conservan durante 10 
 ## ManyChat → buscar
 
 ```text
-POST https://catalogo.farmaciavittae.cl/manychat/buscar
+POST https://catalogo.ejemplo.cl/manychat/buscar
 Content-Type: application/json
 X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
 ```
@@ -39,7 +39,7 @@ Mapear `$.texto` a un campo de texto. Cuando haya varias opciones, mapear los `r
 ## ManyChat → producto
 
 ```text
-POST https://catalogo.farmaciavittae.cl/manychat/producto
+POST https://catalogo.ejemplo.cl/manychat/producto
 Content-Type: application/json
 X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
 ```

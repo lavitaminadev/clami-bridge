@@ -28,7 +28,7 @@ La aplicación borra automáticamente logs de más de 10 días al iniciar y cada
 Consultar con un cliente que permita cabeceras:
 
 ```bash
-curl --fail --silent --show-error https://catalogo.farmaciavittae.cl/dev/status \
+curl --fail --silent --show-error https://catalogo.ejemplo.cl/dev/status \
   -H "Authorization: Bearer TU_ADMIN_STATUS_TOKEN"
 ```
 
@@ -37,14 +37,14 @@ No pegar este comando con el token real en tickets, chats, Git ni capturas.
 ## Logs privados para desarrollo
 
 ```bash
-curl --fail --silent --show-error "https://catalogo.farmaciavittae.cl/dev/logs?limit=50" \
+curl --fail --silent --show-error "https://catalogo.ejemplo.cl/dev/logs?limit=50" \
   -H "Authorization: Bearer TU_ADMIN_STATUS_TOKEN"
 ```
 
 Para ver un día anterior que no se revisó:
 
 ```bash
-curl --fail --silent --show-error "https://catalogo.farmaciavittae.cl/dev/logs?date=2026-10-20&limit=100" \
+curl --fail --silent --show-error "https://catalogo.ejemplo.cl/dev/logs?date=2026-10-20&limit=100" \
   -H "Authorization: Bearer TU_ADMIN_STATUS_TOKEN"
 ```
 

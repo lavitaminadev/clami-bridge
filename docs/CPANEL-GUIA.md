@@ -1,14 +1,16 @@
 # Guía cPanel — rutas y campos
 
-Esta guía usa los datos conocidos de la cuenta `farmaciavittaecl`. No cambia WordPress.
+Esta guía usa marcadores: `usuario-cpanel` representa el usuario real de la cuenta cPanel y
+`catalogo.ejemplo.cl` el subdominio real. Reemplazar ambos antes de ejecutar cualquier comando.
+No cambia WordPress.
 
 ## Rutas del servidor
 
 ```text
-WordPress:        /home/farmaciavittaecl/public_html
-Aplicación Node:  /home/farmaciavittaecl/clami-manychat-bridge
-Logs de la app:   /home/farmaciavittaecl/clami-manychat-bridge/logs
-Estado técnico:   /home/farmaciavittaecl/clami-manychat-bridge/data
+WordPress:        /home/usuario-cpanel/public_html
+Aplicación Node:  /home/usuario-cpanel/clami-manychat-bridge
+Logs de la app:   /home/usuario-cpanel/clami-manychat-bridge/logs
+Estado técnico:   /home/usuario-cpanel/clami-manychat-bridge/data
 ```
 
 No poner la aplicación, `data` ni `logs` dentro de `public_html`.
@@ -18,7 +20,7 @@ No poner la aplicación, `data` ni `logs` dentro de `public_html`.
 En **cPanel → Domains**, crear:
 
 ```text
-catalogo.farmaciavittae.cl
+catalogo.ejemplo.cl
 ```
 
 Luego abrir **SSL/TLS Status**, incluir el subdominio en AutoSSL y usar **Run AutoSSL**. Confirmar que el certificado figura como activo antes de configurar ManyChat; ManyChat solo acepta HTTPS.
@@ -28,7 +30,7 @@ Luego abrir **SSL/TLS Status**, incluir el subdominio en AutoSSL y usar **Run Au
 Subir el ZIP del contenido de `clami-manychat-bridge` al directorio home y extraerlo hasta que exista:
 
 ```text
-/home/farmaciavittaecl/clami-manychat-bridge/app.js
+/home/usuario-cpanel/clami-manychat-bridge/app.js
 ```
 
 No subir `.env`, `logs`, `data`, `test-logs`, `test-data` ni credenciales.
@@ -46,14 +48,14 @@ Usar estos valores cuando aparezcan los campos:
 | Node.js version | `24.21.0` |
 | Application mode | `Production` |
 | Application root | `clami-manychat-bridge` |
-| Application URL | `catalogo.farmaciavittae.cl` y ruta vacía `/` |
+| Application URL | `catalogo.ejemplo.cl` y ruta vacía `/` |
 | Application startup file | `app.js` |
 
 No fijar `PORT`: Passenger entrega `process.env.PORT` a la app.
 
 Solicitar a iHosting una sola instancia Passenger para este subdominio. Esta mini app acepta muchas consultas asíncronas en ese proceso; no se debe escalar a varios procesos sin Redis o un estado compartido para la cuota global de CLAMI. Además, el código crea `data/single-instance.lock`: una segunda instancia se niega a iniciar antes de hacer consultas. Es una barrera de seguridad, no reemplaza la confirmación de iHosting.
 
-Si el panel no permite elegir `app.js`, no cambiar el código a ciegas. Abrir un ticket a iHosting indicando que Passenger debe iniciar `/home/farmaciavittaecl/clami-manychat-bridge/app.js`.
+Si el panel no permite elegir `app.js`, no cambiar el código a ciegas. Abrir un ticket a iHosting indicando que Passenger debe iniciar `/home/usuario-cpanel/clami-manychat-bridge/app.js`.
 
 ## Paso 4 — Variables de entorno
 
@@ -75,7 +77,7 @@ Para generar el token antes de subir, ejecutar localmente `npm run generate:admi
 Crear la aplicación y usar **Restart** después de modificar código o variables. En instalaciones Passenger donde el botón no reinicia, crear o actualizar:
 
 ```text
-/home/farmaciavittaecl/clami-manychat-bridge/tmp/restart.txt
+/home/usuario-cpanel/clami-manychat-bridge/tmp/restart.txt
 ```
 
 Esto es una alternativa documentada por cPanel; no es necesario si el botón Restart funciona.
@@ -85,7 +87,7 @@ Esto es una alternativa documentada por cPanel; no es necesario si el botón Res
 Abrir en navegador:
 
 ```text
-https://catalogo.farmaciavittae.cl/health
+https://catalogo.ejemplo.cl/health
 ```
 
 Respuesta esperada:
@@ -97,7 +99,7 @@ Respuesta esperada:
 La ruta de estado para el desarrollador es:
 
 ```text
-GET https://catalogo.farmaciavittae.cl/dev/status
+GET https://catalogo.ejemplo.cl/dev/status
 Authorization: Bearer ADMIN_STATUS_TOKEN
 ```
 
@@ -106,7 +108,7 @@ No abrir el token en la URL. Usar curl o Postman con la cabecera Authorization.
 Para ver eventos técnicos sanitizados:
 
 ```text
-GET https://catalogo.farmaciavittae.cl/dev/logs?limit=50
+GET https://catalogo.ejemplo.cl/dev/logs?limit=50
 Authorization: Bearer ADMIN_STATUS_TOKEN
 ```
 
@@ -115,7 +117,7 @@ Authorization: Bearer ADMIN_STATUS_TOKEN
 En **cPanel → Cron Jobs**, ejecutar cada cinco minutos:
 
 ```bash
-/bin/bash /home/farmaciavittaecl/clami-manychat-bridge/scripts/cpanel-healthcheck.sh https://catalogo.farmaciavittae.cl/health >/dev/null 2>&1
+/bin/bash /home/usuario-cpanel/clami-manychat-bridge/scripts/cpanel-healthcheck.sh https://catalogo.ejemplo.cl/health >/dev/null 2>&1
 ```
 
 El cron verifica disponibilidad y puede despertar Passenger después de inactividad. No reemplaza alertas externas ni garantiza que iHosting se recupere ante una caída total.

@@ -27,6 +27,6 @@ Se usaron para el archivo `app.js`, Passenger, reinicio mediante `tmp/restart.tx
 
 ## iHosting/cPanel — evidencia privada aportada
 
-Origen: `https://cpanel.farmaciavittae.cl`.
+Origen: `https://cpanel.ejemplo.cl`.
 
 Datos vistos: cuenta, dominio, home, servidor, SSL, NGINX Cache, recursos y subdominios. La IP de salida real de Node/Passenger no está confirmada por esa pantalla y debe ser validada con iHosting.

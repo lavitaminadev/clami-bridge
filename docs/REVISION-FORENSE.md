@@ -37,7 +37,7 @@
 1. iHosting confirma IP HTTPS de salida de Passenger/Node y que es estable.
 2. Setup Node.js App permite Node 24.21.0 y `app.js` como startup file.
 3. El Document Root real del subdominio no hereda reglas WordPress; solo si falla se agrega el template `.htaccess` ahí.
-4. NGINX Cache excluye `catalogo.farmaciavittae.cl`.
+4. NGINX Cache excluye `catalogo.ejemplo.cl`.
 5. External Request está disponible en el plan ManyChat.
 6. Prueba real: ManyChat → puente → CLAMI, usando una credencial asociada solo a la IP productiva.
 7. Confirmar que Passenger levanta una sola instancia. Si intenta levantar otra, debe aparecer el mensaje de cerradura en el log Passenger y la primera sigue atendiendo.

@@ -24,7 +24,7 @@
 ## Antes de producción
 
 1. Seguir `docs/CPANEL-GUIA.md`.
-2. Crear `catalogo.farmaciavittae.cl` y certificado HTTPS.
+2. Crear `catalogo.ejemplo.cl` y certificado HTTPS.
 3. Configurar `CLAMI_API_KEY`, `MANYCHAT_SECRET`, `ADMIN_STATUS_TOKEN` y `NODE_ENV=production` en cPanel.
 4. Confirmar la IP de salida de Passenger con iHosting antes de usar la credencial CLAMI.
 5. Excluir el subdominio de NGINX Cache.

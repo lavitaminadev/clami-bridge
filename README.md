@@ -7,6 +7,10 @@ Para desplegar, seguir [docs/CPANEL-GUIA.md](docs/CPANEL-GUIA.md). Las rutas est
 La división de responsabilidades está en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 El resumen de archivos, rutas, seguridad y errores está en [docs/RESUMEN-ARCHIVOS.md](docs/RESUMEN-ARCHIVOS.md).
 
+## Marcadores de este repositorio
+
+Los ejemplos usan `usuario-cpanel` y `catalogo.ejemplo.cl` en lugar del usuario de cPanel y del dominio reales. Reemplazarlos por los propios antes de copiar cualquier comando.
+
 ## Incluye
 
 - `POST /manychat/buscar`
@@ -22,7 +26,7 @@ El resumen de archivos, rutas, seguridad y errores está en [docs/RESUMEN-ARCHIV
 ## Antes de instalar
 
 1. Confirmar con iHosting la IP de salida fija de Passenger/Node.
-2. Crear `catalogo.farmaciavittae.cl` y excluirlo de NGINX Cache.
+2. Crear `catalogo.ejemplo.cl` y excluirlo de NGINX Cache.
 3. Crear la aplicación con cPanel → Setup Node.js App y apuntarla fuera de `public_html`.
 4. Configurar las variables de entorno desde cPanel:
 
@@ -37,26 +41,26 @@ No subir `.env` real, `logs/` ni `data/` a un repositorio.
 
 ## Instalación en cPanel
 
-1. Subir y extraer esta carpeta en `/home/farmaciavittaecl/clami-manychat-bridge`.
+1. Subir y extraer esta carpeta en `/home/usuario-cpanel/clami-manychat-bridge`.
 2. En **Setup Node.js App**, crear la app con Node 24.21.0.
-3. Asociar la URL al subdominio `catalogo.farmaciavittae.cl`.
+3. Asociar la URL al subdominio `catalogo.ejemplo.cl`.
 4. Configurar `app.js` como **Application startup file**.
 5. Agregar las variables de entorno anteriores.
 6. No ejecutar **Run NPM Install**: el proyecto no tiene dependencias externas y evitarlo previene consumo innecesario de inodos.
 7. Reiniciar la aplicación.
-8. Abrir `https://catalogo.farmaciavittae.cl/health`; debe devolver `{"ok":true}`.
+8. Abrir `https://catalogo.ejemplo.cl/health`; debe devolver `{"ok":true}`.
 
 ## Estado privado para desarrollo
 
 ```bash
-curl --fail --silent --show-error https://catalogo.farmaciavittae.cl/dev/status \
+curl --fail --silent --show-error https://catalogo.ejemplo.cl/dev/status \
   -H "Authorization: Bearer TU_ADMIN_STATUS_TOKEN"
 ```
 
 Para logs técnicos sanitizados:
 
 ```bash
-curl --fail --silent --show-error "https://catalogo.farmaciavittae.cl/dev/logs?limit=50" \
+curl --fail --silent --show-error "https://catalogo.ejemplo.cl/dev/logs?limit=50" \
   -H "Authorization: Bearer TU_ADMIN_STATUS_TOKEN"
 ```
 
@@ -80,7 +84,7 @@ Buscar:
 URL:
 
 ```text
-https://catalogo.farmaciavittae.cl/manychat/buscar
+https://catalogo.ejemplo.cl/manychat/buscar
 ```
 
 Producto:
@@ -92,7 +96,7 @@ Producto:
 URL:
 
 ```text
-https://catalogo.farmaciavittae.cl/manychat/producto
+https://catalogo.ejemplo.cl/manychat/producto
 ```
 
 Mapear `$.texto` a un campo de texto y, si hay varias opciones, mapear `$.opciones[n].ref` a campos internos para la elección del usuario. No mostrar `ref` al cliente.
@@ -111,7 +115,7 @@ Los logs guardan estado técnico, duración, ruta, resultado y código CLAMI. No
 Crear un Cron Job cada 5 minutos en cPanel:
 
 ```bash
-/usr/bin/curl --fail --silent --show-error --max-time 10 https://catalogo.farmaciavittae.cl/health >/dev/null
+/usr/bin/curl --fail --silent --show-error --max-time 10 https://catalogo.ejemplo.cl/health >/dev/null
 ```
 
 Esto detecta una caída y puede despertar una app Passenger inactiva, pero no reemplaza un monitor externo ni reinicia el hosting. Para recibir alertas reales, configurar un monitor externo contra `/health`.
