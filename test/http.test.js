@@ -137,6 +137,27 @@ test('una busqueda autenticada devuelve texto y opciones', async () => {
   assert.equal(r.body.canal, 'whatsapp');
 });
 
+test('/manychat/buscar-detalle devuelve solo productos CLAMI normalizados', async () => {
+  upstream({ consulta: 'paracetamol', resultados: [{ ...PRODUCTO, campo_no_documentado: 'no debe salir' }] });
+  const r = await pedir({ method: 'POST', url: '/manychat/buscar-detalle', headers: conSecreto, body: '{"q":"termino-detalle-ok","canal":"whatsapp"}' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, {
+    ok: true,
+    consulta: 'termino-detalle-ok',
+    resultados: [PRODUCTO],
+    canal: 'whatsapp'
+  });
+});
+
+test('/manychat/buscar-detalle no conserva ni registra un codigo de barras', async () => {
+  upstream({ consulta: null, resultados: [PRODUCTO] });
+  const codigo = '7801234567890';
+  const r = await pedir({ method: 'POST', url: '/manychat/buscar-detalle', headers: conSecreto, body: `{"q":"${codigo}"}` });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.consulta, null);
+  assert.equal(JSON.stringify(r.body).includes(codigo), false);
+});
+
 test('la respuesta al bot nunca incluye la credencial ni el secreto', async () => {
   upstream({ resultados: [PRODUCTO] });
   const r = await pedir({ method: 'POST', url: '/manychat/buscar', headers: conSecreto, body: '{"q":"termino-sin-filtracion"}' });
@@ -200,6 +221,17 @@ test('los eventos registrados no contienen lo que el cliente busco', async () =>
   assert.equal(texto.includes(PRODUCTO.ref), false, 'el registro guardo el ref');
 });
 
+test('la ruta de detalle tampoco deja consulta ni ref en el registro', async () => {
+  const consulta = 'ketoprofeno-detalle-marcador-unico';
+  upstream({ resultados: [PRODUCTO] });
+  await pedir({ method: 'POST', url: '/manychat/buscar-detalle', headers: conSecreto, body: JSON.stringify({ q: consulta }) });
+  await new Promise((r) => setTimeout(r, 50));
+  const r = await pedir({ url: '/dev/logs?limit=100', headers: { authorization: `Bearer ${TOKEN}` } });
+  const texto = JSON.stringify(r.body);
+  assert.equal(texto.includes(consulta), false, 'el registro guardo la consulta de detalle');
+  assert.equal(texto.includes(PRODUCTO.ref), false, 'el registro guardo el ref de detalle');
+});
+
 test('tres fallos del mismo token lo bloquean sin afectar a otro valor', async () => {
   const malo = { authorization: 'Bearer token-malo-repetido' };
   assert.equal((await pedir({ url: '/dev/status', headers: malo })).status, 401);
@@ -255,6 +287,21 @@ test('/manychat/producto devuelve texto y el ref consultado', async () => {
   assert.equal(r.body.ok, true);
   assert.equal(r.body.ref, PRODUCTO.ref);
   assert.match(r.body.texto, /PARACETAMOL — \$600/);
+});
+
+test('/manychat/producto-detalle devuelve el producto CLAMI normalizado', async () => {
+  upstream({ ...PRODUCTO, campo_no_documentado: 'no debe salir' });
+  const r = await pedir({ method: 'POST', url: '/manychat/producto-detalle', headers: conSecreto, body: `{"ref":"${PRODUCTO.ref}"}` });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ok: true, producto: PRODUCTO });
+});
+
+test('las rutas de detalle devuelven 200 con error operacional para ManyChat', async () => {
+  globalThis.fetch = async () => { throw Object.assign(new Error('caido'), { name: 'TypeError' }); };
+  const r = await pedir({ method: 'POST', url: '/manychat/buscar-detalle', headers: conSecreto, body: '{"q":"termino-detalle-red"}' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, false);
+  assert.equal(r.body.codigo, ERROR_CODES.CLAMI_NETWORK_ERROR);
 });
 
 test('/manychat/producto sirve de cache sin volver a consultar', async () => {

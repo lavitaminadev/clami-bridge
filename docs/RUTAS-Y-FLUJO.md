@@ -7,6 +7,8 @@
 | `/health` | GET | Monitor/Cron | No devuelve detalles ni secretos |
 | `/manychat/buscar` | POST | ManyChat | `X-ManyChat-Secret` |
 | `/manychat/producto` | POST | ManyChat | `X-ManyChat-Secret` |
+| `/manychat/buscar-detalle` | POST | ManyChat avanzado | `X-ManyChat-Secret` |
+| `/manychat/producto-detalle` | POST | ManyChat avanzado | `X-ManyChat-Secret` |
 
 ## Privada para desarrollo
 
@@ -49,6 +51,41 @@ X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
 ```
 
 El servidor vuelve a CLAMI para precio y stock actualizados.
+
+## ManyChat → detalle opcional
+
+Las rutas de detalle no cambian las rutas anteriores. Se reservan para una
+automatización que necesite decidir su propio formato o menú, pero no devuelven
+la respuesta HTTP cruda de CLAMI: entregan únicamente los campos oficiales que
+el puente ya validó.
+
+```text
+POST https://catalogo.ejemplo.cl/manychat/buscar-detalle
+Content-Type: application/json
+X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
+```
+
+```json
+{ "q": "{{busqueda}}", "canal": "whatsapp" }
+```
+
+La respuesta contiene `ok`, `consulta`, `resultados` y `canal`. Cada elemento
+de `resultados` trae `ref`, `nombre`, `tipo`, `marca`, `stock`, `locales`,
+`precio_venta` y `receta_retenida`.
+
+```text
+POST https://catalogo.ejemplo.cl/manychat/producto-detalle
+Content-Type: application/json
+X-ManyChat-Secret: valor-de-MANYCHAT_SECRET
+```
+
+```json
+{ "ref": "{{ref_elegido}}" }
+```
+
+La respuesta contiene `ok` y `producto` con los mismos campos normalizados.
+El automatizador debe mostrar precio y disponibilidad, y avisar receta retenida
+cuando `receta_retenida` sea `true`.
 
 ## Lo que impone ManyChat
 

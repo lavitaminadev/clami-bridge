@@ -48,6 +48,15 @@ const ADMIN_LOCK_MS = 40_000;
 const MAX_ADMIN_LOG_ENTRIES = 100;
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
 const MAX_LOG_FILE_BYTES = 8 * 1024 * 1024;
+// Estas rutas mantienen el contrato resumido existente y suman un contrato de
+// detalle normalizado. El detalle no es un proxy crudo: pasa por la misma
+// validación que protege al flujo normal ante respuestas incompletas de CLAMI.
+const MANYCHAT_ROUTES = new Set([
+  '/manychat/buscar',
+  '/manychat/producto',
+  '/manychat/buscar-detalle',
+  '/manychat/producto-detalle'
+]);
 // El dueño del candado actualiza su marca de tiempo cada 15 s. Un candado cuya
 // marca lleva mas de 45 s sin moverse pertenece a un proceso que ya no esta, sin
 // importar que el PID escrito exista: en un hosting compartido los PID se reciclan
@@ -552,7 +561,7 @@ function registerDistinctProduct(ref) {
   void persistState();
 }
 
-async function handleSearch(body) {
+async function loadSearch(body) {
   const { q, channel, isBarcode } = validateSearchBody(body);
   const cacheKey = `search:${q.toLocaleLowerCase('es-CL')}`;
   let results = isBarcode ? null : cacheGet(cacheKey);
@@ -563,13 +572,18 @@ async function handleSearch(body) {
     results = requireSearchResults(await clamiGet(`/buscar/?q=${encodeURIComponent(q)}`));
     if (!isBarcode) cacheSet(cacheKey, results, SEARCH_CACHE_TTL_MS);
   }
+  return { q, channel, isBarcode, results, cacheHit, queryType: isBarcode ? 'barcode' : 'text' };
+}
+
+async function handleSearch(body) {
+  const { channel, isBarcode, results, cacheHit, queryType } = await loadSearch(body);
   if (!results.length) return { payload: { ok: true, texto: 'No encontré productos para esa búsqueda.', opciones: [] }, cacheHit, queryType: isBarcode ? 'barcode' : 'text' };
   const options = results.map((product, index) => ({ numero: index + 1, ref: product.ref, texto: productText(product) }));
   const texto = options.length === 1 ? options[0].texto : `Encontré ${options.length} opciones. Responde con el número que corresponde.`;
-  return { payload: { ok: true, texto, opciones: options, canal: channel }, cacheHit, queryType: isBarcode ? 'barcode' : 'text' };
+  return { payload: { ok: true, texto, opciones: options, canal: channel }, cacheHit, queryType };
 }
 
-async function handleProduct(body) {
+async function loadProduct(body) {
   const ref = validateProductBody(body);
   const cacheKey = `product:${ref}`;
   let product = cacheGet(cacheKey);
@@ -580,7 +594,28 @@ async function handleProduct(body) {
     registerDistinctProduct(ref);
     cacheSet(cacheKey, product, PRODUCT_CACHE_TTL_MS);
   }
+  return { product, cacheHit };
+}
+
+async function handleProduct(body) {
+  const { product, cacheHit } = await loadProduct(body);
   return { payload: { ok: true, texto: productText(product), ref: product.ref }, cacheHit };
+}
+
+// Contrato avanzado opcional. Se conservan solo los campos públicos y validados
+// del esquema CLAMI; no se reenvía la respuesta HTTP cruda del upstream.
+async function handleSearchDetail(body) {
+  const { q, channel, isBarcode, results, cacheHit } = await loadSearch(body);
+  return {
+    payload: { ok: true, consulta: isBarcode ? null : q, resultados: results, canal: channel },
+    cacheHit,
+    queryType: isBarcode ? 'detail_barcode' : 'detail_text'
+  };
+}
+
+async function handleProductDetail(body) {
+  const { product, cacheHit } = await loadProduct(body);
+  return { payload: { ok: true, producto: product }, cacheHit, queryType: 'detail_product' };
 }
 
 // Condiciones de operación: el catálogo no respondió, se agotó un cupo o el producto
@@ -611,7 +646,7 @@ const OPERATIONAL_CODES = new Set([
 // es la respuesta correcta y el código es lo que permite encontrar la falla.
 // `/health` y `/dev/*` no pasan por ManyChat y mantienen siempre su código.
 function responseStatusFor(route, error) {
-  const isManyChatRoute = route === '/manychat/buscar' || route === '/manychat/producto';
+  const isManyChatRoute = MANYCHAT_ROUTES.has(route);
   return isManyChatRoute && OPERATIONAL_CODES.has(error.errorCode) ? 200 : error.status;
 }
 
@@ -647,14 +682,20 @@ async function requestHandler(request, response) {
       return;
     }
     if (!isConfigured()) throw new HttpError(503, 'Servicio no configurado.', { reason: 'missing_configuration' });
-    if (request.method !== 'POST' || !['/manychat/buscar', '/manychat/producto'].includes(route)) throw new HttpError(404, 'No encontrado.');
+    if (request.method !== 'POST' || !MANYCHAT_ROUTES.has(route)) throw new HttpError(404, 'No encontrado.');
     if (!String(request.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw new HttpError(415, 'Se requiere application/json.');
     ensureManyChat(request);
     // El límite local se aplica solo después de autenticar ManyChat: una URL pública
     // no puede ser usada por bots anónimos para agotar el cupo del flujo real.
     if (!clientAllowed()) throw new HttpError(429, 'Demasiadas solicitudes.', { reason: 'local_rate_limit', retryAfter: 60 });
     const body = await readJsonBody(request);
-    const result = route === '/manychat/buscar' ? await handleSearch(body) : await handleProduct(body);
+    const result = route === '/manychat/buscar'
+      ? await handleSearch(body)
+      : route === '/manychat/producto'
+        ? await handleProduct(body)
+        : route === '/manychat/buscar-detalle'
+          ? await handleSearchDetail(body)
+          : await handleProductDetail(body);
     respond(response, 200, result.payload);
     await audit('request_ok', { ...baseLog, status: 200, durationMs: Date.now() - startedAt, cacheHit: result.cacheHit, queryType: result.queryType });
   } catch (error) {

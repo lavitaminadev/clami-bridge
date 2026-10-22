@@ -84,6 +84,8 @@ cada campo de CLAMI y lo que ve el cliente están en
 |---|---|---|---|
 | `/manychat/buscar` | POST | ManyChat | `X-ManyChat-Secret` |
 | `/manychat/producto` | POST | ManyChat | `X-ManyChat-Secret` |
+| `/manychat/buscar-detalle` | POST | ManyChat avanzado | `X-ManyChat-Secret` |
+| `/manychat/producto-detalle` | POST | ManyChat avanzado | `X-ManyChat-Secret` |
 | `/health` | GET | Cron y monitores | ninguna; no revela nada |
 | `/dev/status` | GET | Desarrollador | `Authorization: Bearer` |
 | `/dev/logs` | GET | Desarrollador | `Authorization: Bearer` |
